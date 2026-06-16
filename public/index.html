@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=1280" />
+  <title>Clarus — AI 採用評価</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&family=Zen+Kaku+Gothic+New:wght@500;700&family=Space+Grotesk:wght@500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <!-- ===== Sidebar ===== -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo">C</div>
+        <div>
+          <div class="name">Clarus</div>
+          <div class="sub">AI 採用評価</div>
+        </div>
+      </div>
+      <nav class="nav" id="nav">
+        <div class="navitem active" data-page="req">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 5h16M4 12h16M4 19h10"/></svg>
+          募集要件
+        </div>
+        <div class="navitem" data-page="new">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>
+          新規評価
+        </div>
+        <div class="navitem" data-page="q">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9.5 9a2.5 2.5 0 1 1 4.5 1.5c-1 .8-2 1.2-2 2.5M12 17h.01"/></svg>
+          質問生成
+        </div>
+        <div class="navitem" data-page="hist">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12a9 9 0 1 0 3-6.7M3 4v5h5M12 7v5l3 2"/></svg>
+          評価履歴
+        </div>
+        <div class="navitem" data-page="set">
+          <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.9 2.9l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.9-2.9l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.9-2.9l.1.1a1.7 1.7 0 0 0 1.8.3h.1a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.9 2.9l-.1.1a1.7 1.7 0 0 0-.3 1.8v.1a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+          設定
+        </div>
+      </nav>
+      <div class="side-foot">
+        v0.1 ｜ 本地 Claude Code 引擎<br/>
+        データはこの PC 内に保管。
+      </div>
+    </aside>
+
+    <!-- ===== Body ===== -->
+    <main class="body">
+      <header class="topbar">
+        <div>
+          <h1 id="pageTitle">募集要件</h1>
+          <div class="sub" id="pageSub">プリセットを選んで、職種ごとの必須スキルと評価の重みを設定します。</div>
+        </div>
+        <div class="pill"><span class="dot"></span><span id="statusText">本地稼働中</span></div>
+      </header>
+
+      <section class="content">
+
+        <!-- ① 募集要件 -->
+        <div class="page active" data-page="req">
+
+          <!-- Top: presets + position + years -->
+          <div class="card req-top">
+            <div id="presetChips" class="preset-chips"></div>
+            <div class="req-meta">
+              <div class="rm-field rm-grow">
+                <label>職種名</label>
+                <input id="position" class="set-input" placeholder="例：ネットワークエンジニア（運用）" />
+              </div>
+              <div class="rm-field">
+                <label>経験年数</label>
+                <div class="years-input">
+                  <input id="experienceYears" class="set-input" type="number" min="0" max="40" step="1" placeholder="0" />
+                  <span class="suffix">年以上</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Middle: skills left, weight bars right -->
+          <div class="card req-mid">
+            <div class="grid2">
+              <div class="col">
+                <div class="skill-block">
+                  <div class="lab">必須スキル</div>
+                  <div id="necessaryTags" class="tags" style="margin-bottom:6px"></div>
+                  <input id="necessaryInput" class="set-input" placeholder="入力して Enter で追加" />
+                </div>
+                <div class="skill-block">
+                  <div class="lab">歓迎スキル</div>
+                  <div id="preferredTags" class="tags" style="margin-bottom:6px"></div>
+                  <input id="preferredInput" class="set-input" placeholder="入力して Enter で追加" />
+                </div>
+              </div>
+              <div class="col">
+                <div class="lab">評価軸の重み <span class="hint">（バーをクリック / 数字入力で設定）</span></div>
+                <div id="weightBars" class="bars"></div>
+                <div class="w-grid w-grid-mini">
+                  <div><input data-w="技術適合" class="set-input" type="number" min="0" max="10" step="1" /></div>
+                  <div><input data-w="業界経験" class="set-input" type="number" min="0" max="10" step="1" /></div>
+                  <div><input data-w="具体性"   class="set-input" type="number" min="0" max="10" step="1" /></div>
+                  <div><input data-w="管理推進" class="set-input" type="number" min="0" max="10" step="1" /></div>
+                  <div><input data-w="安定性"   class="set-input" type="number" min="0" max="10" step="1" /></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom: raw paste + actions -->
+          <div class="card req-bottom">
+            <div class="lab">原文・補足メモ（コピー & ペースト → 自動入力）</div>
+            <textarea id="rawBody" class="set-input" rows="6" placeholder="求人要件の原文をそのまま貼り付け → 下のボタンで自動入力（基本情報 / 必須スキル / 評価軸の重み 等）"></textarea>
+            <div class="actions">
+              <button id="parseBtn" class="btn-ghost" type="button">原文から自動入力</button>
+              <span id="parseMsg" class="msg"></span>
+              <span style="flex:1"></span>
+              <span id="saveMsg" class="hint"></span>
+              <button class="btn-ghost" id="resetReq">既定値に戻す</button>
+              <button id="saveReq" class="btn-primary">保存する</button>
+            </div>
+          </div>
+
+          <select id="preset" style="display:none"></select>
+        </div>
+
+        <!-- ② 新規評価 -->
+        <div class="page" data-page="new">
+          <div id="reqStrip" class="req-strip">
+            <div class="rs-head">
+              <div class="rs-l">
+                <div class="rs-label">現在の募集要件</div>
+                <div class="rs-title" id="rsTitle">未設定</div>
+              </div>
+              <div class="rs-r" id="rsMeta">
+                <span class="rs-warn">先に「募集要件」タブで設定してください</span>
+              </div>
+            </div>
+            <div class="rs-skills" id="rsSkills"></div>
+          </div>
+
+          <div class="card">
+            <h2>履歷スキルシートをアップロード</h2>
+            <div class="desc">PDF / DOCX / XLS / XLSX / HTML 対応・<b>複数ファイル可</b>。Haiku で順次に人物像（要約・スキル・要件との照合）を生成します。点数評価はこの段階では行いません。</div>
+
+            <div id="drop" class="drop">
+              <div style="font-size:32px; margin-bottom:6px; opacity:.5">⇪</div>
+              <div><b>クリックで選択</b> または ドラッグ＆ドロップ（複数可）</div>
+              <div class="hint" style="margin-top:6px">PDF / DOCX / XLS / XLSX / HTML</div>
+              <input id="file" type="file" accept=".pdf,.docx,.xls,.xlsx,.html,.htm" multiple hidden />
+            </div>
+
+            <div id="queue" class="queue"></div>
+
+            <div class="actions">
+              <button id="runSummary" class="btn-primary" disabled>一括解析する</button>
+              <button id="clearQueue" class="btn-ghost" style="display:none">クリア</button>
+              <span id="runMsg" class="hint"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- ③ 質問生成 -->
+        <div class="page" data-page="q">
+          <div id="qReqStrip" class="req-strip">
+            <div class="rs-head">
+              <div class="rs-l">
+                <div class="rs-label">現在の募集要件</div>
+                <div class="rs-title">未設定</div>
+              </div>
+              <div class="rs-r">
+                <span class="rs-warn">先に「募集要件」タブで設定してください</span>
+              </div>
+            </div>
+            <div class="rs-skills"></div>
+          </div>
+
+          <div class="card">
+            <h2>候補者を選択</h2>
+            <div class="desc">②要約済みの候補者一覧から選択 → ①要件と合わせて Claude が質問を生成します。</div>
+            <div class="actions" style="margin-top:6px">
+              <select id="qCandidate" class="set-input" style="flex:1; min-width:280px"></select>
+              <button id="qGenerate" class="btn-primary" disabled>質問を生成</button>
+            </div>
+            <div id="qMsg" class="hint" style="margin-top:10px"></div>
+          </div>
+
+          <div id="qResult"></div>
+        </div>
+
+        <!-- ④ 評価履歴 -->
+        <div class="page" data-page="hist">
+          <div class="card">
+            <h2>評価履歴</h2>
+            <div class="desc">これまでに人物像要約を生成した候補者の一覧。カードをクリックでレポートを開きます。</div>
+            <div id="hist" class="history-grid"></div>
+            <div id="histEmpty" class="empty" style="display:none">
+              <div class="big">∅</div>
+              まだ評価がありません。「新規評価」から履歷をアップロードしてください。
+            </div>
+          </div>
+        </div>
+
+        <!-- ⑤ 設定 -->
+        <div class="page" data-page="set">
+          <div class="card">
+            <h2>設定</h2>
+            <div class="desc">本地保存のパスと引擎の状態を表示します。</div>
+            <div class="row"><div class="label">サーバ</div><div><code>http://localhost:3939</code></div></div>
+            <div class="row"><div class="label">データ格納</div><div><code>reports/</code>（HTML＋JSON）／ <code>requirements/</code>／ <code>presets/</code></div></div>
+            <div class="row"><div class="label">引擎</div><div>本地 Claude Code（<code>claude -p</code>）</div></div>
+            <div class="row"><div class="label">面接転写</div><div>Teams 自带文字起こしを利用（本ツールでは転写しない）</div></div>
+          </div>
+        </div>
+
+      </section>
+    </main>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

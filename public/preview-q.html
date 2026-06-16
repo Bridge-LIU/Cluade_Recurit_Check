@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=1280" />
+  <title>Clarus — 質問生成 UI プレビュー</title>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&family=Zen+Kaku+Gothic+New:wght@500;700&family=Space+Grotesk:wght@500;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --canvas:#E9ECF1; --surface:#FFFFFF; --surface-2:#F6F8FA;
+      --ink:#1A1D24; --ink-2:#586071; --ink-3:#8A92A3;
+      --line:#E4E8EE; --line-2:#EEF1F5;
+      --coral:#D97757; --coral-deep:#BE5C3C; --coral-soft:#FBEDE6;
+      --green:#3BA776;
+      --disp:'Zen Kaku Gothic New','Hiragino Kaku Gothic ProN','Yu Gothic','Meiryo',sans-serif;
+      --body:'Noto Sans JP','Hiragino Kaku Gothic ProN','Yu Gothic','Meiryo',sans-serif;
+      --mono:'Space Grotesk','Consolas','Menlo',monospace;
+    }
+    * { box-sizing:border-box; }
+    body { margin:0; background:var(--canvas); font-family:var(--body); color:var(--ink); font-size:14px; line-height:1.55; padding:22px 28px 80px; max-width:1180px; margin-left:auto; margin-right:auto; }
+    .head { display:flex; justify-content:space-between; align-items:flex-end; margin-bottom:14px; }
+    .head h1 { margin:0; font-family:var(--disp); font-size:20px; }
+    .head .sub { color:var(--ink-2); font-size:12.5px; margin-top:3px; }
+    .pill { display:inline-flex; align-items:center; gap:6px; background:var(--surface); border:1px solid var(--line); border-radius:999px; padding:5px 12px; font-size:12px; color:var(--ink-2); }
+    .pill .dot { width:7px; height:7px; border-radius:50%; background:var(--green); }
+
+    .tabs { display:flex; gap:6px; margin-bottom:14px; flex-wrap:wrap; }
+    .tab { padding:8px 16px; border-radius:10px; background:var(--surface); border:1px solid var(--line); cursor:pointer; font-size:13px; color:var(--ink-2); font-weight:500; }
+    .tab:hover { color:var(--coral-deep); border-color:var(--coral); }
+    .tab.active { background:var(--coral); color:#fff; border-color:var(--coral); box-shadow:0 2px 6px rgba(217,119,87,0.28); }
+    .variant { display:none; }
+    .variant.active { display:block; }
+
+    /* ===== A: アコーディオン ===== */
+    .vA .acc-item { background:var(--surface); border:1px solid var(--line); border-radius:11px; margin-bottom:7px; overflow:hidden; }
+    .vA .acc-head { display:flex; align-items:center; justify-content:space-between; padding:10px 16px; cursor:pointer; user-select:none; }
+    .vA .acc-head:hover { background:var(--surface-2); }
+    .vA .acc-title { font-family:var(--disp); font-size:14px; font-weight:600; display:flex; align-items:center; gap:10px; }
+    .vA .acc-badge { background:var(--coral-soft); color:var(--coral-deep); font-family:var(--mono); font-size:11px; padding:2px 8px; border-radius:6px; }
+    .vA .acc-arrow { color:var(--ink-3); font-size:11px; transition:transform .15s; display:inline-block; }
+    .vA .acc-item.open .acc-arrow { transform:rotate(90deg); color:var(--coral); }
+    .vA .acc-body { display:none; padding:4px 16px 12px; }
+    .vA .acc-item.open .acc-body { display:block; }
+    .vA .acc-item.open .acc-head { border-bottom:1px solid var(--line-2); }
+    .vA .acc-q { padding:8px 0 9px; border-bottom:1px solid var(--line-2); }
+    .vA .acc-q:last-child { border-bottom:0; }
+    .vA .acc-q .num { font-family:var(--mono); font-size:10.5px; color:var(--coral-deep); font-weight:600; }
+    .vA .acc-q .txt { font-size:13px; line-height:1.65; margin-top:1px; }
+    .vA .acc-q .aim { font-size:11.5px; color:var(--ink-2); background:var(--coral-soft); border-left:2px solid var(--coral); padding:4px 9px; margin-top:5px; border-radius:0 5px 5px 0; }
+    .vA .acc-q .aim b { color:var(--coral-deep); margin-right:5px; }
+
+    /* ===== B: グループタブ ===== */
+    .vB .gtabs { display:flex; gap:5px; margin-bottom:10px; overflow-x:auto; padding-bottom:4px; }
+    .vB .gtab { padding:7px 14px; border-radius:999px; background:var(--surface); border:1.5px solid var(--line); font-size:12px; font-weight:500; color:var(--ink-2); cursor:pointer; white-space:nowrap; }
+    .vB .gtab:hover { color:var(--coral-deep); border-color:var(--coral); }
+    .vB .gtab.on { background:var(--coral); color:#fff; border-color:var(--coral); }
+    .vB .gtab .b-cnt { font-family:var(--mono); font-size:10.5px; margin-left:6px; opacity:.7; }
+    .vB .gpanel { display:none; background:var(--surface); border:1px solid var(--line); border-radius:11px; padding:6px 14px; }
+    .vB .gpanel.on { display:block; }
+    .vB .g-item { padding:10px 0; border-bottom:1px solid var(--line-2); }
+    .vB .g-item:last-child { border-bottom:0; }
+    .vB .g-item .num { font-family:var(--mono); font-size:10.5px; color:var(--coral-deep); font-weight:600; }
+    .vB .g-item .txt { font-size:13px; line-height:1.65; margin-top:1px; }
+    .vB .g-item .aim { font-size:11.5px; color:var(--ink-2); background:var(--coral-soft); border-left:2px solid var(--coral); padding:4px 9px; margin-top:5px; border-radius:0 5px 5px 0; }
+    .vB .g-item .aim b { color:var(--coral-deep); margin-right:5px; }
+
+    /* ===== C: 2 カラム ===== */
+    .vC .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+    .vC .g-card { background:var(--surface); border:1px solid var(--line); border-radius:11px; padding:11px 14px; }
+    .vC .g-card h3 { margin:0 0 4px; font-family:var(--disp); font-size:13px; font-weight:600; display:flex; justify-content:space-between; align-items:center; }
+    .vC .g-card h3 .cnt { font-family:var(--mono); font-size:10.5px; color:var(--ink-3); font-weight:400; }
+    .vC .c-q { padding:7px 0 8px; border-top:1px solid var(--line-2); }
+    .vC .c-q .num { font-family:var(--mono); font-size:10.5px; color:var(--coral-deep); font-weight:600; }
+    .vC .c-q .txt { font-size:12px; line-height:1.55; margin-top:1px; }
+    .vC .c-q .aim { font-size:11px; color:var(--ink-2); margin-top:4px; padding-left:8px; border-left:2px solid var(--coral); }
+    .vC .c-q .aim b { color:var(--coral-deep); margin-right:4px; }
+
+    /* ===== D: フラット連番 + 狙い折りたたみ ===== */
+    .vD .flat { background:var(--surface); border:1px solid var(--line); border-radius:11px; padding:4px 0; }
+    .vD .g-sep { font-size:10.5px; color:var(--ink-3); letter-spacing:.06em; font-weight:600; padding:11px 18px 5px; border-top:1px solid var(--line-2); text-transform:uppercase; }
+    .vD .g-sep:first-child { border-top:0; padding-top:8px; }
+    .vD .f-q { display:flex; gap:12px; align-items:flex-start; padding:8px 18px; border-top:1px solid var(--line-2); }
+    .vD .f-q.first { border-top:0; }
+    .vD .f-q .num { font-family:var(--mono); font-size:13px; color:var(--coral-deep); font-weight:600; min-width:26px; padding-top:1px; }
+    .vD .f-q .body { flex:1; }
+    .vD .f-q .txt { font-size:13px; line-height:1.65; }
+    .vD .f-q .toggle { background:none; border:0; color:var(--ink-3); cursor:pointer; font-size:11px; padding:2px 0 0; margin-top:1px; font-family:var(--body); }
+    .vD .f-q .toggle:hover { color:var(--coral-deep); }
+    .vD .f-q .aim { display:none; font-size:11.5px; color:var(--ink-2); background:var(--coral-soft); border-left:2px solid var(--coral); padding:5px 9px; margin-top:5px; border-radius:0 5px 5px 0; }
+    .vD .f-q.show-aim .aim { display:block; }
+    .vD .f-q.show-aim .toggle { color:var(--coral-deep); }
+  </style>
+</head>
+<body>
+  <div class="head">
+    <div>
+      <h1>質問生成 UI プレビュー — 15 問の表示比較（SRE エンジニアの例）</h1>
+      <div class="sub">上のタブで切替。気に入った版を本ページに反映します。</div>
+    </div>
+    <div class="pill"><span class="dot"></span> 4 バリエーション</div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" data-v="A">A. アコーディオン</div>
+    <div class="tab" data-v="B">B. グループタブ切替</div>
+    <div class="tab" data-v="C">C. 2 カラム</div>
+    <div class="tab" data-v="D">D. フラット連番 + 狙い折りたたみ</div>
+  </div>
+
+  <div class="variant vA active" data-v="A" id="vA"></div>
+  <div class="variant vB" data-v="B" id="vB"></div>
+  <div class="variant vC" data-v="C" id="vC"></div>
+  <div class="variant vD" data-v="D" id="vD"></div>
+
+<script>
+  const DATA = {
+    groups: [
+      {
+        title: '技術スキルの深掘り（直近案件）',
+        items: [
+          { text: '直近の Kubernetes クラスタ運用において、ノード数・Pod 数・対象サービス数の規模感、および採用バージョンと選定理由について教えてください。', aim: 'K8s 実務深度と意思決定能力' },
+          { text: 'Terraform でインフラを構築された際、モジュール分割と State 管理（バックエンド）はどのように設計されましたか？', aim: '設計思想・運用責任' },
+          { text: 'CI/CD パイプラインの構築事例として、使用ツール・ステージ構成・デプロイ戦略（Blue/Green か Canary 等）を教えてください。', aim: 'デプロイ実装の具体性' },
+        ]
+      },
+      {
+        title: '障害対応・運用安定性',
+        items: [
+          { text: '直近 1 年で対応した重大障害のうち、原因切り分けに最も時間を要した事例とその過程をご共有ください。', aim: 'トラブルシュート力' },
+          { text: 'インシデント発生時のエスカレーション体制と一次対応の役割分担はどうなっていましたか？', aim: 'チーム運用経験' },
+          { text: 'SLO / SLI / エラーバジェットを設計・運用された経験があれば、対象サービスと閾値の決め方を教えてください。', aim: 'SRE 文化理解' },
+        ]
+      },
+      {
+        title: 'AWS 実務・コスト感',
+        items: [
+          { text: '担当されたシステムで主に使用された AWS サービスを 3〜5 つ挙げ、それぞれの選定理由を教えてください。', aim: 'サービス選定の判断' },
+          { text: 'AWS コスト最適化に取り組まれた事例（RI 購入・Spot 活用・タグ運用 等）があれば、削減率を含めてご共有ください。', aim: 'コスト意識' },
+          { text: 'マルチアカウント構成（Organizations / Landing Zone 等）に関わった経験があれば、設計方針を教えてください。', aim: 'エンタープライズ規模の経験' },
+        ]
+      },
+      {
+        title: '未確認の必須スキル',
+        items: [
+          { text: 'Linux サーバ運用において、カーネルパラメータやネットワークスタックの調整を行った具体的な事例があれば教えてください。', aim: 'OS 深層理解' },
+          { text: 'CI/CD 環境において、テスト失敗時の rollback / 通知設計はどう構築されましたか？', aim: '運用堅牢性' },
+        ]
+      },
+      {
+        title: '歓迎スキル・キャリア志向',
+        items: [
+          { text: 'Go 言語を業務で利用されたご経験があれば、書かれた CLI ツール・サービスとその役割を教えてください。', aim: 'Go 実務経験の有無' },
+          { text: 'Prometheus / Grafana を用いた監視基盤を構築された経験について、ダッシュボード設計の例を教えてください。', aim: '監視構築力' },
+          { text: '金融業界での開発・運用経験があれば、特に意識された規制やコンプライアンス対応を教えてください。', aim: '業界特性の理解' },
+          { text: '今後 SRE / Platform Engineer としてどのようなキャリアを描いていらっしゃるか、関心のあるテーマを含めてお聞かせください。', aim: 'キャリア志向確認' },
+        ]
+      },
+    ]
+  };
+
+  const esc = (s) => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const totalCount = DATA.groups.reduce((a, g) => a + g.items.length, 0);
+
+  // ===== A: Accordion =====
+  function renderA() {
+    let n = 0;
+    document.getElementById('vA').innerHTML = DATA.groups.map((g, gi) => `
+      <div class="acc-item ${gi === 0 ? 'open' : ''}">
+        <div class="acc-head" data-i="${gi}">
+          <div class="acc-title">
+            <span class="acc-arrow">▶</span>
+            ${esc(g.title)}
+            <span class="acc-badge">${g.items.length} 件</span>
+          </div>
+        </div>
+        <div class="acc-body">
+          ${g.items.map(q => { n++; return `
+            <div class="acc-q">
+              <div class="num">Q${n}</div>
+              <div class="txt">${esc(q.text)}</div>
+              <div class="aim"><b>狙い</b>${esc(q.aim)}</div>
+            </div>
+          `; }).join('')}
+        </div>
+      </div>
+    `).join('');
+    document.querySelectorAll('#vA .acc-head').forEach(el => {
+      el.addEventListener('click', () => el.parentElement.classList.toggle('open'));
+    });
+  }
+
+  // ===== B: Group tabs =====
+  function renderB() {
+    let n = 0;
+    const tabs = DATA.groups.map((g, gi) => `
+      <div class="gtab ${gi === 0 ? 'on' : ''}" data-g="${gi}">${esc(g.title)}<span class="b-cnt">${g.items.length}</span></div>
+    `).join('');
+    const panels = DATA.groups.map((g, gi) => `
+      <div class="gpanel ${gi === 0 ? 'on' : ''}" data-g="${gi}">
+        ${g.items.map(q => { n++; return `
+          <div class="g-item">
+            <div class="num">Q${n}</div>
+            <div class="txt">${esc(q.text)}</div>
+            <div class="aim"><b>狙い</b>${esc(q.aim)}</div>
+          </div>
+        `; }).join('')}
+      </div>
+    `).join('');
+    document.getElementById('vB').innerHTML = `
+      <div class="gtabs">${tabs}</div>
+      ${panels}
+    `;
+    document.querySelectorAll('#vB .gtab').forEach(t => {
+      t.addEventListener('click', () => {
+        const g = t.dataset.g;
+        document.querySelectorAll('#vB .gtab').forEach(x => x.classList.toggle('on', x === t));
+        document.querySelectorAll('#vB .gpanel').forEach(x => x.classList.toggle('on', x.dataset.g === g));
+      });
+    });
+  }
+
+  // ===== C: 2 columns =====
+  function renderC() {
+    let n = 0;
+    const cards = DATA.groups.map((g) => `
+      <div class="g-card">
+        <h3>${esc(g.title)}<span class="cnt">${g.items.length}件</span></h3>
+        ${g.items.map(q => { n++; return `
+          <div class="c-q">
+            <div class="num">Q${n}</div>
+            <div class="txt">${esc(q.text)}</div>
+            <div class="aim"><b>狙い</b>${esc(q.aim)}</div>
+          </div>
+        `; }).join('')}
+      </div>
+    `).join('');
+    document.getElementById('vC').innerHTML = `<div class="grid">${cards}</div>`;
+  }
+
+  // ===== D: Flat numbered + collapsible aim =====
+  function renderD() {
+    let n = 0;
+    let first = true;
+    const rows = DATA.groups.map((g) => {
+      const seg = `<div class="g-sep">${esc(g.title)} ・ ${g.items.length}件</div>` +
+        g.items.map(q => {
+          n++;
+          const cls = first ? 'f-q first' : 'f-q';
+          first = false;
+          return `
+            <div class="${cls}" data-n="${n}">
+              <div class="num">${n}.</div>
+              <div class="body">
+                <div class="txt">${esc(q.text)}</div>
+                <button class="toggle">💡 狙いを見る</button>
+                <div class="aim"><b>狙い</b>${esc(q.aim)}</div>
+              </div>
+            </div>
+          `;
+        }).join('');
+      return seg;
+    }).join('');
+    document.getElementById('vD').innerHTML = `<div class="flat">${rows}</div>`;
+    document.querySelectorAll('#vD .toggle').forEach(b => {
+      b.addEventListener('click', () => {
+        const row = b.closest('.f-q');
+        row.classList.toggle('show-aim');
+        b.textContent = row.classList.contains('show-aim') ? '▲ 狙いを隠す' : '💡 狙いを見る';
+      });
+    });
+  }
+
+  renderA(); renderB(); renderC(); renderD();
+
+  document.querySelectorAll('.tab').forEach(t => {
+    t.addEventListener('click', () => {
+      const k = t.dataset.v;
+      document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
+      document.querySelectorAll('.variant').forEach(x => x.classList.toggle('active', x.dataset.v === k));
+    });
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+survey/node_modules/
+
+# Build artifacts
+survey/.next/
+survey/.vercel/
+
+# Environment / secrets
+.clarus/
+survey/.env*.local
+.env*.local
+
+# Real candidate data (sensitive)
+files/
+processed/
+questions/
+reports/
+
+# OS
+.DS_Store
+Thumbs.db
