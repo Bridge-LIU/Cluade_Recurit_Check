@@ -5,9 +5,10 @@ survey/node_modules/
 # Build artifacts
 survey/.next/
 survey/.vercel/
+*.tsbuildinfo
 
 # Environment / secrets
-.clarus/
+.bridge/
 survey/.env*.local
 .env*.local
 

@@ -1,5 +1,5 @@
 // shared/types.ts
-// Clarus 本地と survey/ 公開側が共有する契約。
+// Bridge 本地と survey/ 公開側が共有する契約。
 
 export type DispatchPayload = {
   candidateId: string;
@@ -42,7 +42,7 @@ export type SubmitPayload = {
   supplementary: string;
 };
 
-// Clarus が取込む結果
+// Bridge が取込む結果
 export type FetchResult =
   | { status: 'pending' }
   | { status: 'submitted'; response: SubmitPayload & { submittedAt: string } };

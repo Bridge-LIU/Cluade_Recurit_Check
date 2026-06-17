@@ -1,22 +1,24 @@
 ---
-preset: "NW"
-position: "NW（ネットワーク）"
-experienceYears: 3
+preset: "PMO"
+position: "PMO（管理者）"
+experienceYears: 5
 weights:
-  技術適合: 10
+  技術適合: 5
   業界経験: 7
-  具体性: 6
-  管理推進: 3
-  安定性: 9
+  具体性: 7
+  管理推進: 10
+  安定性: 7
 necessary:
-  - ネットワーク設計・構築
-  - Cisco / ルーティング
-  - 保守運用（24/365 含む）
-  - L2/L3 スイッチ、Firewall
-  - 監視・障害対応
+  - PM / PMO 経験
+  - 進捗・品質・コスト管理
+  - ステークホルダ管理 / 折衝
+  - リスク管理
 preferred: []
-updatedAt: "2026-06-16T07:26:23.020Z"
+updatedAt: "2026-06-17T01:15:38.868Z"
 ---
+
+
+
 
 
 {
@@ -28,4 +30,7 @@ updatedAt: "2026-06-16T07:26:23.020Z"
       "weights": { "tech": 10, "industry": 7, "logic": 8, "mgmt": 4, "stability": 6 },
       "memo": "# 募集要件（開発（アプリ／システム））\n実装の具体性を重視。手を動かせる即戦力。"
     }
+
+
+
 

@@ -4,9 +4,10 @@ import type { SurveyDocument } from '@shared/types';
 
 type Props = { token: string; doc: SurveyDocument };
 
-const STORAGE_KEY = (token: string) => `clarus-survey-draft:${token}`;
+const STORAGE_KEY = (token: string) => `bridge-survey-draft:${token}`;
 
 export default function SurveyForm({ token, doc }: Props) {
+  const [started, setStarted] = useState(false);
   const [email, setEmail] = useState('');
   const [name, setName] = useState(doc.q2Name.defaultValue);
   const [answers, setAnswers] = useState<string[]>(() => doc.questions.map(() => ''));
@@ -24,16 +25,19 @@ export default function SurveyForm({ token, doc }: Props) {
           setName(d.name ?? doc.q2Name.defaultValue);
           setAnswers(d.answers ?? doc.questions.map(() => ''));
           setSupplementary(d.supplementary ?? '');
+          const hasDraft = d.email || (Array.isArray(d.answers) && d.answers.some((a: string) => a)) || d.supplementary;
+          if (hasDraft) setStarted(true);
         }
       } catch {}
     }
   }, [token, doc.questions.length, doc.q2Name.defaultValue]);
 
   useEffect(() => {
+    if (!started) return;
     localStorage.setItem(STORAGE_KEY(token), JSON.stringify({
       email, name, answers, supplementary, questionCount: doc.questions.length,
     }));
-  }, [token, email, name, answers, supplementary, doc.questions.length]);
+  }, [token, email, name, answers, supplementary, doc.questions.length, started]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();

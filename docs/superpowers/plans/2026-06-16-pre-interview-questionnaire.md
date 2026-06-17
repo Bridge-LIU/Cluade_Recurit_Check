@@ -2,16 +2,16 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Clarus に「AI 質問生成→候補者にアンケート配信→回答自動取込」のフローを実装。Vercel + Upstash Redis で公開側を、本地 Clarus を拡張する形で本地側を構築する。
+**Goal:** Bridge に「AI 質問生成→候補者にアンケート配信→回答自動取込」のフローを実装。Vercel + Upstash Redis で公開側を、本地 Bridge を拡張する形で本地側を構築する。
 
-**Architecture:** モノレポ構成。`survey/` サブディレクトリに Next.js（App Router）の公開アンケートサービスを置き、Vercel にデプロイ。`shared/types.ts` で両端の契約を共有。本地 Clarus（Express + vanilla JS）は質問編集 UI、配信ボタン、回答取込（手動 + 5 分自動ポーリング）を担当。候補者ごとに独立した 12 文字 token URL、Redis TTL で 7 日自動失効、SETNX で単回提出。
+**Architecture:** モノレポ構成。`survey/` サブディレクトリに Next.js（App Router）の公開アンケートサービスを置き、Vercel にデプロイ。`shared/types.ts` で両端の契約を共有。本地 Bridge（Express + vanilla JS）は質問編集 UI、配信ボタン、回答取込（手動 + 5 分自動ポーリング）を担当。候補者ごとに独立した 12 文字 token URL、Redis TTL で 7 日自動失効、SETNX で単回提出。
 
 **Tech Stack:**
 - Public side: Next.js 14 App Router, TypeScript, Tailwind CSS, `@upstash/redis`, `zod`
 - Shared: TypeScript types in `shared/types.ts`
-- Local Clarus: Express (既存), vanilla JS frontend, vitest for tests, native `fetch`
+- Local Bridge: Express (既存), vanilla JS frontend, vitest for tests, native `fetch`
 - Storage: Upstash Redis (Vercel Marketplace, free tier)
-- Auth: Clarus ⇔ Vercel は Bearer API Key, 候補者は無認証 (URL token のみ)
+- Auth: Bridge ⇔ Vercel は Bearer API Key, 候補者は無認証 (URL token のみ)
 
 **Spec:** `docs/superpowers/specs/2026-06-16-pre-interview-questionnaire-design.md`
 
@@ -29,7 +29,7 @@
 
 ```typescript
 // shared/types.ts
-// Clarus 本地と survey/ 公開側が共有する契約。
+// Bridge 本地と survey/ 公開側が共有する契約。
 
 export type DispatchPayload = {
   candidateId: string;
@@ -72,7 +72,7 @@ export type SubmitPayload = {
   supplementary: string;
 };
 
-// Clarus が取込む結果
+// Bridge が取込む結果
 export type FetchResult =
   | { status: 'pending' }
   | { status: 'submitted'; response: SubmitPayload & { submittedAt: string } };
@@ -83,8 +83,8 @@ export type FetchResult =
 `.gitignore` に追加（既存ファイルがなければ新規作成）：
 
 ```
-# Clarus 秘密情報
-.clarus/
+# Bridge 秘密情報
+.bridge/
 
 # Vercel survey side
 survey/node_modules/
@@ -118,7 +118,7 @@ git commit -m "feat(shared): add survey contract types and gitignore"
 
 ```json
 {
-  "name": "clarus-survey",
+  "name": "bridge-survey",
   "version": "0.1.0",
   "private": true,
   "scripts": {
@@ -259,7 +259,7 @@ import { ReactNode } from 'react';
 
 export const metadata = {
   title: '面接前事前アンケート',
-  description: 'Clarus survey',
+  description: 'Bridge survey',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {
@@ -612,7 +612,7 @@ import type { SurveyDocument } from '@shared/types';
 
 type Props = { token: string; doc: SurveyDocument };
 
-const STORAGE_KEY = (token: string) => `clarus-survey-draft:${token}`;
+const STORAGE_KEY = (token: string) => `bridge-survey-draft:${token}`;
 
 export default function SurveyForm({ token, doc }: Props) {
   const [email, setEmail] = useState('');
@@ -1019,7 +1019,7 @@ NEXT_PUBLIC_BASE_URL=http://localhost:3000
 - [ ] **Step 2: `survey/README.md`**
 
 ```markdown
-# Clarus Survey (公開アンケート側)
+# Bridge Survey (公開アンケート側)
 
 Vercel デプロイ用。
 
@@ -1033,7 +1033,7 @@ Vercel デプロイ用。
 2. プロジェクト設定 → Root Directory = `survey`
 3. Marketplace から Upstash Redis を追加（`KV_*` が自動注入される）
 4. `SURVEY_API_KEY` を環境変数に追加（`openssl rand -hex 16` で生成）
-5. `NEXT_PUBLIC_BASE_URL` を本番 URL に設定（例 `https://clarus-survey-xxx.vercel.app`）
+5. `NEXT_PUBLIC_BASE_URL` を本番 URL に設定（例 `https://bridge-survey-xxx.vercel.app`）
 6. デプロイ
 ```
 
@@ -1048,7 +1048,7 @@ Vercel デプロイ用。
    - `SURVEY_API_KEY` = `openssl rand -hex 16` の結果
    - `NEXT_PUBLIC_BASE_URL` = デプロイ後割当 URL（一旦空、後で更新）
 6. Deploy
-7. 割当 URL（例 `clarus-survey-xxx.vercel.app`）を確認
+7. 割当 URL（例 `bridge-survey-xxx.vercel.app`）を確認
 8. `NEXT_PUBLIC_BASE_URL` を更新して再デプロイ
 9. `curl https://<url>/api/surveys -H "Authorization: Bearer <key>" -d '{...}'` で動作確認
 
@@ -1061,7 +1061,7 @@ git commit -m "docs(survey): add deployment guide and env example"
 
 ---
 
-## Phase B — 本地統合（Clarus）
+## Phase B — 本地統合（Bridge）
 
 ### Task 9: データモデル拡張と vitest セットアップ
 
@@ -1100,7 +1100,7 @@ import { readQuestions, writeQuestions, defaultDispatch } from './questions-stor
 
 let tmpDir;
 beforeEach(async () => {
-  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'clarus-test-'));
+  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'bridge-test-'));
 });
 afterEach(async () => {
   await fs.rm(tmpDir, { recursive: true, force: true });
@@ -1217,7 +1217,7 @@ Expected: PASS (3 tests)
 
 ```bash
 git add package.json server/lib/questions-store.js server/lib/questions-store.test.js
-git commit -m "feat(clarus): questions store with status/dispatch defaults"
+git commit -m "feat(bridge): questions store with status/dispatch defaults"
 ```
 
 ---
@@ -1239,13 +1239,13 @@ import path from 'path';
 import os from 'os';
 import { loadSettings, saveSettings, loadSurveyConfig, defaultSettings } from './settings.js';
 
-let tmpDir, presets, clarusDir;
+let tmpDir, presets, bridgeDir;
 beforeEach(async () => {
-  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'clarus-set-'));
+  tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'bridge-set-'));
   presets = path.join(tmpDir, 'presets');
-  clarusDir = path.join(tmpDir, '.clarus');
+  bridgeDir = path.join(tmpDir, '.bridge');
   await fs.mkdir(presets, { recursive: true });
-  await fs.mkdir(clarusDir, { recursive: true });
+  await fs.mkdir(bridgeDir, { recursive: true });
 });
 afterEach(() => fs.rm(tmpDir, { recursive: true, force: true }));
 
@@ -1265,14 +1265,14 @@ describe('loadSettings', () => {
 
 describe('loadSurveyConfig', () => {
   it('returns null when missing', async () => {
-    const c = await loadSurveyConfig(clarusDir);
+    const c = await loadSurveyConfig(bridgeDir);
     expect(c).toBeNull();
   });
 
   it('reads endpoint and apiKey', async () => {
-    await fs.writeFile(path.join(clarusDir, 'survey-config.json'),
+    await fs.writeFile(path.join(bridgeDir, 'survey-config.json'),
       JSON.stringify({ endpoint: 'https://x.vercel.app', apiKey: 'k' }));
-    const c = await loadSurveyConfig(clarusDir);
+    const c = await loadSurveyConfig(bridgeDir);
     expect(c.endpoint).toBe('https://x.vercel.app');
     expect(c.apiKey).toBe('k');
   });
@@ -1347,8 +1347,8 @@ export async function saveSettings(presetsDir, settings) {
   await fs.writeFile(p, JSON.stringify(settings, null, 2), 'utf8');
 }
 
-export async function loadSurveyConfig(clarusDir) {
-  const p = path.join(clarusDir, 'survey-config.json');
+export async function loadSurveyConfig(bridgeDir) {
+  const p = path.join(bridgeDir, 'survey-config.json');
   try {
     return JSON.parse(await fs.readFile(p, 'utf8'));
   } catch (e) {
@@ -1357,9 +1357,9 @@ export async function loadSurveyConfig(clarusDir) {
   }
 }
 
-export async function saveSurveyConfig(clarusDir, config) {
-  await fs.mkdir(clarusDir, { recursive: true });
-  const p = path.join(clarusDir, 'survey-config.json');
+export async function saveSurveyConfig(bridgeDir, config) {
+  await fs.mkdir(bridgeDir, { recursive: true });
+  const p = path.join(bridgeDir, 'survey-config.json');
   await fs.writeFile(p, JSON.stringify(config, null, 2), 'utf8');
 }
 ```
@@ -1376,7 +1376,7 @@ Expected: PASS (4 tests)
 
 ```bash
 git add server/lib/settings.js server/lib/settings.test.js
-git commit -m "feat(clarus): settings loader with defaults and survey-config separation"
+git commit -m "feat(bridge): settings loader with defaults and survey-config separation"
 ```
 
 ---
@@ -1461,7 +1461,7 @@ Expected: PASS (3 tests)
 
 ```bash
 git add server/lib/template.js server/lib/template.test.js
-git commit -m "feat(clarus): template expansion helper"
+git commit -m "feat(bridge): template expansion helper"
 ```
 
 ---
@@ -1593,7 +1593,7 @@ Expected: PASS (4 tests)
 
 ```bash
 git add server/lib/survey-client.js server/lib/survey-client.test.js
-git commit -m "feat(clarus): vercel api client wrapper"
+git commit -m "feat(bridge): vercel api client wrapper"
 ```
 
 ---
@@ -1672,7 +1672,7 @@ app.put('/api/questions/:id', async (req, res) => {
 ```javascript
 app.post('/api/questions/:id/dispatch', async (req, res) => {
   try {
-    const config = await loadSurveyConfig(path.join(ROOT, '.clarus'));
+    const config = await loadSurveyConfig(path.join(ROOT, '.bridge'));
     if (!config) return res.status(412).json({ error: 'no_survey_config' });
     const settings = await loadSettings(DIRS.presets);
     const data = await readQuestions(DIRS.questions, req.params.id);
@@ -1738,7 +1738,7 @@ app.post('/api/questions/:id/dispatch', async (req, res) => {
 ```javascript
 app.post('/api/questions/:id/fetch', async (req, res) => {
   try {
-    const config = await loadSurveyConfig(path.join(ROOT, '.clarus'));
+    const config = await loadSurveyConfig(path.join(ROOT, '.bridge'));
     if (!config) return res.status(412).json({ error: 'no_survey_config' });
     const data = await readQuestions(DIRS.questions, req.params.id);
     if (!data.dispatch.token) return res.status(409).json({ error: 'not_dispatched' });
@@ -1803,7 +1803,7 @@ app.post('/api/questions/:id/fetch', async (req, res) => {
 ```javascript
 app.post('/api/questions/:id/close', async (req, res) => {
   try {
-    const config = await loadSurveyConfig(path.join(ROOT, '.clarus'));
+    const config = await loadSurveyConfig(path.join(ROOT, '.bridge'));
     const data = await readQuestions(DIRS.questions, req.params.id);
     if (data.dispatch.token && config) {
       await closeSurvey(config, data.dispatch.token).catch(() => {});
@@ -1836,7 +1836,7 @@ npm start
 
 ```bash
 git add server.js
-git commit -m "feat(clarus): add survey dispatch/fetch/close endpoints"
+git commit -m "feat(bridge): add survey dispatch/fetch/close endpoints"
 ```
 
 ---
@@ -1854,7 +1854,7 @@ git commit -m "feat(clarus): add survey dispatch/fetch/close endpoints"
 app.get('/api/settings', async (_req, res) => {
   try {
     const settings = await loadSettings(DIRS.presets);
-    const config = await loadSurveyConfig(path.join(ROOT, '.clarus'));
+    const config = await loadSurveyConfig(path.join(ROOT, '.bridge'));
     res.json({
       ...settings,
       surveyEndpoint: config?.endpoint ?? '',
@@ -1872,8 +1872,8 @@ app.post('/api/settings', async (req, res) => {
     const { saveSettings, saveSurveyConfig } = await import('./server/lib/settings.js');
     await saveSettings(DIRS.presets, rest);
     if (surveyEndpoint || surveyApiKey) {
-      const cur = await loadSurveyConfig(path.join(ROOT, '.clarus')) ?? {};
-      await saveSurveyConfig(path.join(ROOT, '.clarus'), {
+      const cur = await loadSurveyConfig(path.join(ROOT, '.bridge')) ?? {};
+      await saveSurveyConfig(path.join(ROOT, '.bridge'), {
         endpoint: surveyEndpoint ?? cur.endpoint,
         apiKey: surveyApiKey || cur.apiKey,
         pollIntervalMs: 300000,
@@ -1887,7 +1887,7 @@ app.post('/api/settings', async (req, res) => {
 
 app.get('/api/settings/survey-test', async (_req, res) => {
   try {
-    const config = await loadSurveyConfig(path.join(ROOT, '.clarus'));
+    const config = await loadSurveyConfig(path.join(ROOT, '.bridge'));
     if (!config) return res.status(412).json({ error: 'no_config' });
     const r = await fetch(`${config.endpoint}/api/surveys/test-token/result`, {
       headers: { Authorization: `Bearer ${config.apiKey}` },
@@ -1912,7 +1912,7 @@ curl http://localhost:3939/api/settings
 
 ```bash
 git add server.js
-git commit -m "feat(clarus): settings GET/POST and survey connection test"
+git commit -m "feat(bridge): settings GET/POST and survey connection test"
 ```
 
 ---
@@ -1933,11 +1933,11 @@ import { readQuestions, writeQuestions, writeAnswers } from './questions-store.j
 import { fetchResult, closeSurvey } from './survey-client.js';
 import { loadSurveyConfig } from './settings.js';
 
-export function startPoller({ questionsDir, clarusDir, intervalMs = 300000 }) {
+export function startPoller({ questionsDir, bridgeDir, intervalMs = 300000 }) {
   let timer = null;
   async function tick() {
     try {
-      const config = await loadSurveyConfig(clarusDir);
+      const config = await loadSurveyConfig(bridgeDir);
       if (!config) return;
 
       const files = await fs.readdir(questionsDir);
@@ -2023,7 +2023,7 @@ export function startPoller({ questionsDir, clarusDir, intervalMs = 300000 }) {
 import { startPoller } from './server/lib/poller.js';
 startPoller({
   questionsDir: DIRS.questions,
-  clarusDir: path.join(ROOT, '.clarus'),
+  bridgeDir: path.join(ROOT, '.bridge'),
   intervalMs: 300000,
 });
 ```
@@ -2039,7 +2039,7 @@ npm start
 
 ```bash
 git add server/lib/poller.js server.js
-git commit -m "feat(clarus): 5-minute polling job for survey responses"
+git commit -m "feat(bridge): 5-minute polling job for survey responses"
 ```
 
 ---
@@ -2367,7 +2367,7 @@ npm start
 
 ```bash
 git add public/index.html public/app.js public/styles.css
-git commit -m "feat(clarus): inline edit mode for questions"
+git commit -m "feat(bridge): inline edit mode for questions"
 ```
 
 ---
@@ -2530,7 +2530,7 @@ npm start
 
 ```bash
 git add public/app.js
-git commit -m "feat(clarus): dispatch modal and answers panel"
+git commit -m "feat(bridge): dispatch modal and answers panel"
 ```
 
 ---
@@ -2721,7 +2721,7 @@ npm start
 
 ```bash
 git add public/index.html public/app.js
-git commit -m "feat(clarus): settings page with vercel link, templates editor"
+git commit -m "feat(bridge): settings page with vercel link, templates editor"
 ```
 
 ---
@@ -2795,7 +2795,7 @@ error ? (error === 'no_survey_config'
 
 ```bash
 git add public/app.js
-git commit -m "feat(clarus): friendlier failure messages and dispatch guards"
+git commit -m "feat(bridge): friendlier failure messages and dispatch guards"
 ```
 
 ---
@@ -2808,7 +2808,7 @@ git commit -m "feat(clarus): friendlier failure messages and dispatch guards"
 
 ```
 設定 → Vercel アンケート連携
-エンドポイント：https://clarus-survey-xxx.vercel.app
+エンドポイント：https://bridge-survey-xxx.vercel.app
 API Key：（Vercel ダッシュボードからコピー）
 [接続テスト] → ✓ 接続 OK
 [設定を保存]
@@ -2832,7 +2832,7 @@ API Key：（Vercel ダッシュボードからコピー）
 
 - [ ] **Step 4: 取込確認**
 
-1. Clarus に戻る、候補者の「今すぐ取得」ボタンをクリック
+1. Bridge に戻る、候補者の「今すぐ取得」ボタンをクリック
 2. 「回答を取得しました」トースト
 3. ステータスバッジが「提出済」に変わる
 4. 「取込済の回答」パネルが表示、内容が正しい
@@ -2856,7 +2856,7 @@ E2E で問題なければスキップ。バグ修正があれば：
 
 ```bash
 git add -A
-git commit -m "fix(clarus): <bug found during E2E>"
+git commit -m "fix(bridge): <bug found during E2E>"
 ```
 
 ---
@@ -2874,17 +2874,17 @@ git commit -m "fix(clarus): <bug found during E2E>"
 ## 面接前 WEB アンケート機能
 
 ### 概要
-候補者に Web アンケートを送り、回答を Clarus に取込んで面接前に共有する。
+候補者に Web アンケートを送り、回答を Bridge に取込んで面接前に共有する。
 
 ### 構成
-- 本地 Clarus（このリポ）：質問生成、編集、配信制御、回答取込
+- 本地 Bridge（このリポ）：質問生成、編集、配信制御、回答取込
 - `survey/`：Vercel デプロイ用の Next.js アプリ（候補者が回答するページ）
 - `shared/types.ts`：両端の契約
 
 ### セットアップ
 1. `survey/README.md` に従って Vercel デプロイ
 2. Vercel ダッシュボードで `SURVEY_API_KEY` を生成（`openssl rand -hex 16`）
-3. Clarus 起動 → 設定タブ → 「Vercel アンケート連携」にエンドポイントと API Key を登録
+3. Bridge 起動 → 設定タブ → 「Vercel アンケート連携」にエンドポイントと API Key を登録
 4. 「接続テスト」で確認
 
 ### 使い方
@@ -2915,7 +2915,7 @@ git commit -m "docs: add pre-interview survey feature to README"
 
 全 21 タスク完了。実装結果：
 
-- Clarus 本地：履歷→人物像→質問生成→編集→公開→回答取込のフルフロー
+- Bridge 本地：履歷→人物像→質問生成→編集→公開→回答取込のフルフロー
 - Vercel：候補者向け公開アンケートサービス（モバイル対応、localStorage 自動保存、SETNX 単回提出、TTL 7 日失効）
 - 設定ページ：HR が自由にメール文面・アンケート表示文を編集可能
 - 5 分ポーリング + 期限自動失効

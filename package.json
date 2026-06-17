@@ -1,8 +1,8 @@
 {
-  "name": "clarus",
+  "name": "bridge",
   "version": "0.1.0",
   "private": true,
-  "description": "Clarus — AI採用評価システム（本地）",
+  "description": "Bridge — AI採用評価システム（本地）",
   "type": "module",
   "scripts": {
     "start": "node server.js",

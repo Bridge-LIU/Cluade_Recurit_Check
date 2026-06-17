@@ -1,4 +1,4 @@
-# Clarus Survey (公開アンケート側)
+# Bridge Survey (公開アンケート側)
 
 Vercel デプロイ用。
 
@@ -12,5 +12,5 @@ Vercel デプロイ用。
 2. プロジェクト設定 → Root Directory = `survey`
 3. Marketplace から Upstash Redis を追加（`KV_*` が自動注入される）
 4. `SURVEY_API_KEY` を環境変数に追加（`openssl rand -hex 16` で生成）
-5. `NEXT_PUBLIC_BASE_URL` を本番 URL に設定（例 `https://clarus-survey-xxx.vercel.app`）
+5. `NEXT_PUBLIC_BASE_URL` を本番 URL に設定（例 `https://bridge-survey-xxx.vercel.app`）
 6. デプロイ

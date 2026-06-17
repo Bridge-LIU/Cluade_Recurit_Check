@@ -3,7 +3,7 @@ import { ReactNode } from 'react';
 
 export const metadata = {
   title: '面接前事前アンケート',
-  description: 'Clarus survey',
+  description: 'Bridge survey',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

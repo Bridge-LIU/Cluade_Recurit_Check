@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="utf-8" />
-  <title>Clarus 評価レポート — {{name}}</title>
+  <title>Bridge 評価レポート — {{name}}</title>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&family=Zen+Kaku+Gothic+New:wght@500;700&family=Space+Grotesk:wght@500;600&display=swap" rel="stylesheet">
   <style>
     :root {
@@ -21,6 +21,8 @@
     .card { background:var(--surface); border:1px solid var(--line); border-radius:14px; padding:26px 28px; margin-bottom:18px; box-shadow:0 1px 2px rgba(20,28,48,0.03); }
     h1 { margin:0; font-family:var(--disp); font-size:22px; }
     h2 { margin:0 0 12px; font-family:var(--disp); font-size:15px; color:var(--ink); }
+    h2.good { color:var(--green); border-left:3px solid var(--green); padding-left:9px; }
+    h2.bad  { color:#C44A38;     border-left:3px solid #C44A38;     padding-left:9px; }
     .head { display:flex; justify-content:space-between; align-items:flex-start; gap:24px; }
     .head .meta { color:var(--ink-2); font-size:12.5px; margin-top:6px; }
     .stars { font-family:var(--mono); color:var(--coral); font-size:22px; letter-spacing:3px; }
@@ -79,11 +81,11 @@
 
     <div class="card two">
       <div>
-        <h2>注目したい強み</h2>
+        <h2 class="good">注目したい強み</h2>
         <ul>{{goodPoints}}</ul>
       </div>
       <div>
-        <h2>確認したい懸念</h2>
+        <h2 class="bad">確認したい懸念</h2>
         <ul>{{concerns}}</ul>
       </div>
     </div>
@@ -94,7 +96,7 @@
       アンケート回答・面接要約が揃ったら ⑤ 評価ステップで重み付き総合点を出します。
     </div>
 
-    <div class="foot">Clarus ｜ 本地 Claude Code 引擎</div>
+    <div class="foot">Bridge ｜ 本地 Claude Code 引擎</div>
   </div>
 </body>
 </html>

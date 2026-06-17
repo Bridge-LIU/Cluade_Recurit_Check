@@ -1,12 +1,12 @@
 export const metadata = {
-  title: 'Clarus 事前アンケート',
+  title: 'Bridge 事前アンケート',
 };
 
 export default function Home() {
   return (
     <main className="min-h-screen flex items-center justify-center px-6">
       <div className="max-w-xl w-full text-center space-y-6">
-        <h1 className="text-2xl font-semibold">Clarus 事前アンケート</h1>
+        <h1 className="text-2xl font-semibold">Bridge 事前アンケート</h1>
         <p className="text-base leading-relaxed text-[#1a1f2e]/80">
           本サイトは面接前にお送りする事前アンケートの回答ページです。
           <br />
