@@ -43,7 +43,14 @@ export async function loadSettings(presetsDir) {
   const p = path.join(presetsDir, 'settings.json');
   try {
     const raw = await fs.readFile(p, 'utf8');
-    return { ...defaultSettings(), ...JSON.parse(raw) };
+    const stored = JSON.parse(raw);
+    const defaults = defaultSettings();
+    return {
+      ...defaults,
+      ...stored,
+      emailTemplate: { ...defaults.emailTemplate, ...(stored.emailTemplate ?? {}) },
+      surveyPageTemplate: { ...defaults.surveyPageTemplate, ...(stored.surveyPageTemplate ?? {}) },
+    };
   } catch (e) {
     if (e.code === 'ENOENT') return defaultSettings();
     throw e;
