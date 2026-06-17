@@ -796,7 +796,7 @@ app.put('/api/questions/:id', async (req, res) => {
 app.post('/api/questions/:id/dispatch', async (req, res) => {
   if (!isValidId(req.params.id)) return res.status(400).json({ error: 'invalid id' });
   try {
-    const config = await loadSurveyConfig(path.join(ROOT, '.clarus'));
+    const config = await loadSurveyConfig(path.join(ROOT, '.bridge'));
     if (!config) return res.status(412).json({ error: 'no_survey_config' });
     const settings = await loadSettings(DIRS.presets);
     const data = await readQuestions(DIRS.questions, req.params.id);
@@ -860,7 +860,7 @@ app.post('/api/questions/:id/dispatch', async (req, res) => {
 app.post('/api/questions/:id/fetch', async (req, res) => {
   if (!isValidId(req.params.id)) return res.status(400).json({ error: 'invalid id' });
   try {
-    const config = await loadSurveyConfig(path.join(ROOT, '.clarus'));
+    const config = await loadSurveyConfig(path.join(ROOT, '.bridge'));
     if (!config) return res.status(412).json({ error: 'no_survey_config' });
     const data = await readQuestions(DIRS.questions, req.params.id);
     if (!data.dispatch.token) return res.status(409).json({ error: 'not_dispatched' });
@@ -931,7 +931,7 @@ app.post('/api/questions/:id/fetch', async (req, res) => {
 app.post('/api/questions/:id/close', async (req, res) => {
   if (!isValidId(req.params.id)) return res.status(400).json({ error: 'invalid id' });
   try {
-    const config = await loadSurveyConfig(path.join(ROOT, '.clarus'));
+    const config = await loadSurveyConfig(path.join(ROOT, '.bridge'));
     const data = await readQuestions(DIRS.questions, req.params.id);
     if (data.dispatch.token && config) {
       await closeSurvey(config, data.dispatch.token).catch(e => console.warn('[survey] closeSurvey failed on manual close:', e.message));
@@ -957,7 +957,7 @@ app.post('/api/questions/:id/close', async (req, res) => {
 app.get('/api/settings', async (_req, res) => {
   try {
     const settings = await loadSettings(DIRS.presets);
-    const config = await loadSurveyConfig(path.join(ROOT, '.clarus'));
+    const config = await loadSurveyConfig(path.join(ROOT, '.bridge'));
     res.json({
       ...settings,
       surveyEndpoint: config?.endpoint ?? '',
@@ -968,14 +968,14 @@ app.get('/api/settings', async (_req, res) => {
   }
 });
 
-// 設定保存（settings.json と .clarus/survey-config.json に分離して書き込み）
+// 設定保存（settings.json と .bridge/survey-config.json に分離して書き込み）
 app.post('/api/settings', async (req, res) => {
   try {
     const { surveyEndpoint, surveyApiKey, ...rest } = req.body;
     await saveSettings(DIRS.presets, rest);
     if (surveyEndpoint || surveyApiKey) {
-      const cur = await loadSurveyConfig(path.join(ROOT, '.clarus')) ?? {};
-      await saveSurveyConfig(path.join(ROOT, '.clarus'), {
+      const cur = await loadSurveyConfig(path.join(ROOT, '.bridge')) ?? {};
+      await saveSurveyConfig(path.join(ROOT, '.bridge'), {
         endpoint: surveyEndpoint ?? cur.endpoint,
         apiKey: surveyApiKey || cur.apiKey,
         pollIntervalMs: 300000,
@@ -990,7 +990,7 @@ app.post('/api/settings', async (req, res) => {
 // Vercel 疎通確認（bogus token で 404 が返れば到達+認証 OK）
 app.get('/api/settings/survey-test', async (_req, res) => {
   try {
-    const config = await loadSurveyConfig(path.join(ROOT, '.clarus'));
+    const config = await loadSurveyConfig(path.join(ROOT, '.bridge'));
     if (!config) return res.status(412).json({ error: 'no_config' });
     const r = await fetch(`${config.endpoint}/api/surveys/test-token/result`, {
       headers: { Authorization: `Bearer ${config.apiKey}` },
@@ -1072,7 +1072,7 @@ app.post('/api/regenerate-question', async (req, res) => {
 
 startPoller({
   questionsDir: DIRS.questions,
-  clarusDir: path.join(ROOT, '.clarus'),
+  clarusDir: path.join(ROOT, '.bridge'),
   intervalMs: 300000,
 });
 
