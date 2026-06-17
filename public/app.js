@@ -1014,6 +1014,8 @@ function fallbackCopy(text) {
 function updateQModeBar(j) {
   const bar = $('#qModeBar');
   if (!bar) return;
+  const result = $('#qResult');
+  if (result) result.classList.toggle('locked', (j.status || 'draft') !== 'draft');
   bar.style.display = 'flex';
   const badge = $('#qStatusBadge');
   const hint = $('#qStatusHint');
@@ -1043,14 +1045,188 @@ function remainingDays(iso) {
 }
 
 function renderAnswersPanel(a) {
-  // Stub — Task 17 fills the content. For now, just acknowledge the answers exist.
   const host = $('#qAnswersPanel');
   if (!host || !a) return;
   host.style.display = 'block';
+  const submittedAt = (a.respondent?.submittedAt || '').replace('T', ' ').slice(0, 16);
   host.innerHTML = `
     <div class="card" style="margin-top:16px">
-      <div class="hint">取込済の回答（詳細は次バージョンで表示）</div>
-      <div>提出日時：${escapeHtml((a.respondent?.submittedAt || '').replace('T', ' ').slice(0, 16))}</div>
+      <h3>取込済の回答</h3>
+      <div class="hint">提出日時：${escapeHtml(submittedAt)}</div>
+      <div><b>メアド：</b>${escapeHtml(a.respondent?.email || '')}</div>
+      <div><b>氏名確認：</b>${escapeHtml(a.respondent?.nameConfirmed || '')}</div>
+      <hr/>
+      ${(a.answers || []).map((x, i) => `
+        <div style="margin:10px 0">
+          <div class="q-num">Q${i + 3}</div>
+          <div class="q-text">${escapeHtml(x.questionText || '')}</div>
+          ${x.aim ? `<div class="q-aim"><b>狙い</b>${escapeHtml(x.aim)}</div>` : ''}
+          <div style="background:#f5f0e8; padding:8px; margin-top:4px; white-space:pre-wrap; border-radius:6px">${escapeHtml(x.answerText || '')}</div>
+        </div>
+      `).join('')}
+      ${a.supplementary ? `
+        <hr/>
+        <div><b>補足</b></div>
+        <div style="background:#f5f0e8; padding:8px; white-space:pre-wrap; border-radius:6px">${escapeHtml(a.supplementary)}</div>
+      ` : ''}
+    </div>
+  `;
+}
+
+// ---------------- 公開 / 取得 / 終了 ----------------
+
+$('#qDispatchBtn')?.addEventListener('click', async () => {
+  if (!qCurrentDoc) return;
+  const candidateName = qCurrentDoc.candidateName;
+  if (!candidateName || candidateName === '(匿名)') {
+    if (!confirm('候補者氏名が未設定です。メール文面の {候補者名} は「候補者」で展開されます。続行しますか？')) return;
+  }
+  if (!confirm('アンケートを公開しますか？\n以降、質問の編集は無効化されます。')) return;
+
+  showDispatchModal({ loading: true });
+  $('#qDispatchBtn').disabled = true;
+  try {
+    const id = qCurrentDoc.candidateId;
+    const r = await fetch(`/api/questions/${encodeURIComponent(id)}/dispatch`, { method: 'POST' });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || `dispatch failed (${r.status})`);
+    showDispatchModal({ result: j });
+    // Reload canonical doc to update status badge
+    const canon = await fetch(`/api/questions/${encodeURIComponent(id)}`).then(rr => rr.json()).catch(() => null);
+    if (canon && canon.groups) {
+      qCurrentDoc = canon;
+      updateQModeBar(canon);
+    }
+  } catch (e) {
+    showDispatchModal({ error: e.message });
+  } finally {
+    $('#qDispatchBtn').disabled = false;
+  }
+});
+
+$('#qFetchBtn')?.addEventListener('click', async () => {
+  if (!qCurrentDoc) return;
+  const btn = $('#qFetchBtn');
+  btn.disabled = true;
+  try {
+    const id = qCurrentDoc.candidateId;
+    const r = await fetch(`/api/questions/${encodeURIComponent(id)}/fetch`, { method: 'POST' });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || `fetch failed (${r.status})`);
+    if (j.status === 'pending') {
+      toast('まだ回答がありません');
+    } else if (j.status === 'submitted') {
+      toast('回答を取得しました');
+      const canon = await fetch(`/api/questions/${encodeURIComponent(id)}`).then(rr => rr.json()).catch(() => null);
+      if (canon && canon.groups) {
+        qCurrentDoc = canon;
+        updateQModeBar(canon);
+        if (canon.answers) renderAnswersPanel(canon.answers);
+      }
+    }
+  } catch (e) {
+    toast('取得失敗：' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$('#qCloseBtn')?.addEventListener('click', async () => {
+  if (!qCurrentDoc) return;
+  if (!confirm('このアンケートを手動終了しますか？\n候補者がアクセスしても回答できなくなります。')) return;
+  const btn = $('#qCloseBtn');
+  btn.disabled = true;
+  try {
+    const id = qCurrentDoc.candidateId;
+    const r = await fetch(`/api/questions/${encodeURIComponent(id)}/close`, { method: 'POST' });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || `close failed (${r.status})`);
+    toast('アンケートを終了しました');
+    const canon = await fetch(`/api/questions/${encodeURIComponent(id)}`).then(rr => rr.json()).catch(() => null);
+    if (canon && canon.groups) {
+      qCurrentDoc = canon;
+      updateQModeBar(canon);
+    }
+  } catch (e) {
+    toast('終了失敗：' + e.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+function showDispatchModal({ loading, result, error }) {
+  const m = $('#qDispatchModal');
+  if (!m) return;
+  m.style.display = 'flex';
+  let inner;
+  if (loading) {
+    inner = '<div><span class="spinner"></span> Vercel に問巻データを送信しています…</div>';
+  } else if (error) {
+    const errMsg = error === 'no_survey_config'
+      ? 'Vercel 接続が未設定です。<br/>設定タブの「Vercel アンケート連携」でエンドポイントと API Key を登録してください。'
+      : `公開失敗：${escapeHtml(error)}`;
+    inner = `
+      <div style="color:var(--coral-deep, #c0392b)">✗ ${errMsg}</div>
+      <div class="actions" style="margin-top:16px; justify-content:flex-end"><button class="btn-ghost" data-close>閉じる</button></div>
+    `;
+  } else if (result) {
+    inner = renderDispatchResult(result);
+  } else {
+    inner = '';
+  }
+  m.innerHTML = `<div class="modal-card">${inner}</div>`;
+
+  // Wire close buttons
+  m.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => { m.style.display = 'none'; }));
+  // Wire result-specific buttons (only present when result is rendered)
+  const copyUrlBtn = m.querySelector('[data-copy-url]');
+  if (copyUrlBtn && result) {
+    copyUrlBtn.addEventListener('click', () => {
+      copyToClipboard(result.surveyUrl);
+      toast('URL をコピーしました');
+    });
+  }
+  const copyEmailBtn = m.querySelector('[data-copy-email]');
+  if (copyEmailBtn && result) {
+    copyEmailBtn.addEventListener('click', () => {
+      copyToClipboard(`件名：${result.email.subject}\n\n${result.email.body}`);
+      toast('メール文面をコピーしました');
+    });
+  }
+  const mailBtn = m.querySelector('[data-send-mail]');
+  if (mailBtn && result) {
+    mailBtn.addEventListener('click', () => {
+      const to = m.querySelector('[data-mail-to]')?.value?.trim() ?? '';
+      const url = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(result.email.subject)}&body=${encodeURIComponent(result.email.body)}`;
+      window.location.href = url;
+    });
+  }
+}
+
+function renderDispatchResult(r) {
+  const expires = (r.expiresAt || '').replace('T', ' ').slice(0, 16);
+  return `
+    <h3>✓ アンケートを公開しました</h3>
+    <div class="hint" style="margin-top:8px">候補者用 URL</div>
+    <div style="display:flex; gap:8px; margin:6px 0">
+      <input class="set-input" value="${escapeHtml(r.surveyUrl)}" readonly style="flex:1" />
+      <button class="btn-ghost" data-copy-url>コピー</button>
+    </div>
+    <div class="hint" style="margin-top:4px">期限：${escapeHtml(expires)}</div>
+
+    <h4 style="margin-top:16px; margin-bottom:6px">メール文面</h4>
+    <div style="margin-bottom:6px"><b>件名：</b>${escapeHtml(r.email.subject)}</div>
+    <textarea class="set-input" rows="10" readonly style="width:100%; font-family:var(--mono, monospace); font-size:13px">${escapeHtml(r.email.body)}</textarea>
+
+    <h4 style="margin-top:16px; margin-bottom:6px">送信先（任意）</h4>
+    <div style="display:flex; gap:8px">
+      <input data-mail-to type="email" class="set-input" placeholder="candidate@example.com" style="flex:1" />
+      <button class="btn-ghost" data-send-mail>メーラーで開く</button>
+    </div>
+
+    <div class="actions" style="margin-top:16px; justify-content:flex-end; gap:8px">
+      <button class="btn-ghost" data-copy-email>メール文面をコピー</button>
+      <button class="btn-primary" data-close>閉じる</button>
     </div>
   `;
 }
