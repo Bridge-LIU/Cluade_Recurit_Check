@@ -14,6 +14,11 @@ import mammoth from 'mammoth';
 import pdfParse from 'pdf-parse';
 import * as XLSX from 'xlsx';
 
+import { readQuestions, writeQuestions, readAnswers, writeAnswers, defaultDispatch } from './server/lib/questions-store.js';
+import { loadSettings, loadSurveyConfig } from './server/lib/settings.js';
+import { expandTemplate, buildTemplateVars } from './server/lib/template.js';
+import { createSurvey, fetchResult, closeSurvey } from './server/lib/survey-client.js';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -582,24 +587,188 @@ app.post('/api/generate-questions', async (req, res) => {
 
 app.get('/api/questions/:id', async (req, res) => {
   if (!isValidId(req.params.id)) return res.status(400).json({ error: 'invalid id' });
-  const p = path.join(DIRS.questions, `${req.params.id}.json`);
-  if (!fssync.existsSync(p)) return res.status(404).json({ error: 'not found' });
-  res.json(JSON.parse(await fs.readFile(p, 'utf8')));
+  try {
+    const data = await readQuestions(DIRS.questions, req.params.id);
+    const answers = await readAnswers(DIRS.questions, req.params.id);
+    res.json({ ...data, answers });
+  } catch (e) {
+    if (e.code === 'ENOENT') return res.status(404).json({ error: 'not found' });
+    res.status(500).json({ error: String(e.message || e) });
+  }
 });
 
 // 質問 JSON 全体を更新（HR の手動編集後の保存用）
 app.put('/api/questions/:id', async (req, res) => {
   if (!isValidId(req.params.id)) return res.status(400).json({ error: 'invalid id' });
-  const p = path.join(DIRS.questions, `${req.params.id}.json`);
-  if (!fssync.existsSync(p)) return res.status(404).json({ error: 'not found' });
   try {
-    const current = JSON.parse(await fs.readFile(p, 'utf8'));
-    const body = req.body || {};
-    if (Array.isArray(body.groups)) current.groups = body.groups;
-    current.updatedAt = new Date().toISOString();
-    await fs.writeFile(p, JSON.stringify(current, null, 2), 'utf8');
-    res.json({ ok: true, updatedAt: current.updatedAt });
+    const existing = await readQuestions(DIRS.questions, req.params.id);
+    if (existing.status !== 'draft') {
+      return res.status(409).json({ error: 'not_editable', status: existing.status });
+    }
+    if (req.body.editedAt && req.body.editedAt !== existing.editedAt) {
+      return res.status(409).json({ error: 'stale', currentEditedAt: existing.editedAt });
+    }
+    const updated = {
+      ...existing,
+      groups: req.body.groups ?? existing.groups,
+      editedAt: new Date().toISOString(),
+    };
+    await writeQuestions(DIRS.questions, req.params.id, updated);
+    res.json({ ok: true, editedAt: updated.editedAt });
   } catch (e) {
+    if (e.code === 'ENOENT') return res.status(404).json({ error: 'not found' });
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+// アンケートをサーベイ基盤に送出（draft → sent）
+app.post('/api/questions/:id/dispatch', async (req, res) => {
+  if (!isValidId(req.params.id)) return res.status(400).json({ error: 'invalid id' });
+  try {
+    const config = await loadSurveyConfig(path.join(ROOT, '.clarus'));
+    if (!config) return res.status(412).json({ error: 'no_survey_config' });
+    const settings = await loadSettings(DIRS.presets);
+    const data = await readQuestions(DIRS.questions, req.params.id);
+    if (data.status !== 'draft') {
+      return res.status(409).json({ error: 'not_draft', status: data.status });
+    }
+
+    const result = await createSurvey(config, {
+      candidateId: data.candidateId,
+      candidateName: data.candidateName,
+      position: data.position,
+      groups: data.groups,
+      companyName: settings.companyName,
+      hrName: settings.hrName,
+      hrEmail: settings.hrEmail,
+      surveyPageTitle: expandTemplate(
+        settings.surveyPageTemplate.title,
+        buildTemplateVars({ candidateName: data.candidateName, position: data.position, settings, surveyUrl: '', expiresAt: '' })
+      ),
+      surveyPageDescription: expandTemplate(
+        settings.surveyPageTemplate.description,
+        buildTemplateVars({ candidateName: data.candidateName, position: data.position, settings, surveyUrl: '', expiresAt: '' })
+      ),
+      ttlSeconds: 604800,
+    });
+
+    const updated = {
+      ...data,
+      status: 'sent',
+      dispatch: {
+        ...data.dispatch,
+        token: result.token,
+        surveyUrl: result.surveyUrl,
+        createdAt: new Date().toISOString(),
+        sentAt: new Date().toISOString(),
+        expiresAt: result.expiresAt,
+      },
+    };
+    await writeQuestions(DIRS.questions, req.params.id, updated);
+
+    const vars = buildTemplateVars({
+      candidateName: data.candidateName, position: data.position, settings,
+      surveyUrl: result.surveyUrl, expiresAt: result.expiresAt,
+    });
+    res.json({
+      ok: true,
+      surveyUrl: result.surveyUrl,
+      expiresAt: result.expiresAt,
+      email: {
+        subject: expandTemplate(settings.emailTemplate.subject, vars),
+        body: expandTemplate(settings.emailTemplate.body, vars),
+      },
+    });
+  } catch (e) {
+    if (e.code === 'ENOENT') return res.status(404).json({ error: 'not found' });
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+// サーベイ基盤から回答を取得（pending or submitted）
+app.post('/api/questions/:id/fetch', async (req, res) => {
+  if (!isValidId(req.params.id)) return res.status(400).json({ error: 'invalid id' });
+  try {
+    const config = await loadSurveyConfig(path.join(ROOT, '.clarus'));
+    if (!config) return res.status(412).json({ error: 'no_survey_config' });
+    const data = await readQuestions(DIRS.questions, req.params.id);
+    if (!data.dispatch.token) return res.status(409).json({ error: 'not_dispatched' });
+
+    const result = await fetchResult(config, data.dispatch.token);
+    const updated = {
+      ...data,
+      dispatch: { ...data.dispatch, lastPolledAt: new Date().toISOString() },
+    };
+
+    if (result.status === 'pending') {
+      if (data.dispatch.expiresAt && new Date() > new Date(data.dispatch.expiresAt)) {
+        updated.status = 'expired';
+        updated.dispatch.closedAt = new Date().toISOString();
+        updated.dispatch.closeReason = 'expired';
+      }
+      await writeQuestions(DIRS.questions, req.params.id, updated);
+      return res.json({ status: 'pending' });
+    }
+
+    const resp = result.response;
+    await writeAnswers(DIRS.questions, req.params.id, {
+      candidateId: data.candidateId,
+      token: data.dispatch.token,
+      fetchedAt: new Date().toISOString(),
+      respondent: {
+        email: resp.email,
+        nameConfirmed: resp.nameConfirmed,
+        submittedAt: resp.submittedAt,
+      },
+      answers: data.groups.flatMap(g =>
+        g.items.map((it) => {
+          const matched = resp.answers.find(a => a.questionText === it.text);
+          return {
+            groupTitle: g.title,
+            questionText: it.text,
+            aim: it.aim,
+            answerText: matched?.answerText ?? '',
+          };
+        })
+      ),
+      supplementary: resp.supplementary,
+    });
+
+    updated.status = 'submitted';
+    updated.dispatch.closedAt = new Date().toISOString();
+    updated.dispatch.closeReason = 'submitted';
+    await writeQuestions(DIRS.questions, req.params.id, updated);
+    await closeSurvey(config, data.dispatch.token).catch(() => {});
+
+    res.json({ status: 'submitted' });
+  } catch (e) {
+    if (e.code === 'ENOENT') return res.status(404).json({ error: 'not found' });
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+// アンケートを手動クローズ
+app.post('/api/questions/:id/close', async (req, res) => {
+  if (!isValidId(req.params.id)) return res.status(400).json({ error: 'invalid id' });
+  try {
+    const config = await loadSurveyConfig(path.join(ROOT, '.clarus'));
+    const data = await readQuestions(DIRS.questions, req.params.id);
+    if (data.dispatch.token && config) {
+      await closeSurvey(config, data.dispatch.token).catch(() => {});
+    }
+    const updated = {
+      ...data,
+      status: 'closed',
+      dispatch: {
+        ...data.dispatch,
+        closedAt: new Date().toISOString(),
+        closeReason: 'manual',
+      },
+    };
+    await writeQuestions(DIRS.questions, req.params.id, updated);
+    res.json({ ok: true });
+  } catch (e) {
+    if (e.code === 'ENOENT') return res.status(404).json({ error: 'not found' });
     res.status(500).json({ error: String(e.message || e) });
   }
 });
