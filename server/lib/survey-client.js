@@ -1,9 +1,10 @@
 // server/lib/survey-client.js
 async function callJson(url, init, config) {
+  const hasBody = init?.body != null;
   const res = await fetch(url, {
     ...init,
     headers: {
-      'Content-Type': 'application/json',
+      ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
       Authorization: `Bearer ${config.apiKey}`,
       ...(init?.headers ?? {}),
     },
@@ -25,7 +26,6 @@ export async function createSurvey(config, payload) {
 export async function fetchResult(config, token) {
   return callJson(`${config.endpoint}/api/surveys/${encodeURIComponent(token)}/result?ack=1`, {
     method: 'GET',
-    headers: { 'Content-Type': undefined }, // GET には不要だが Bearer は付く
   }, config);
 }
 

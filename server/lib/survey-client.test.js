@@ -33,6 +33,11 @@ describe('createSurvey', () => {
     });
     await expect(createSurvey(config, {})).rejects.toThrow(/401/);
   });
+
+  it('propagates network errors', async () => {
+    global.fetch.mockRejectedValue(new Error('network'));
+    await expect(createSurvey(config, {})).rejects.toThrow('network');
+  });
 });
 
 describe('fetchResult', () => {
@@ -46,6 +51,14 @@ describe('fetchResult', () => {
     expect(r.status).toBe('pending');
   });
 
+  it('does not set Content-Type on GET /result', async () => {
+    global.fetch.mockResolvedValue({ ok: true, json: async () => ({}) });
+    await fetchResult(config, 'tok');
+    const sentHeaders = global.fetch.mock.calls[0][1].headers;
+    expect(sentHeaders['Content-Type']).toBeUndefined();
+    expect(sentHeaders.Authorization).toBe('Bearer k');
+  });
+
   it('URL-encodes the token', async () => {
     global.fetch.mockResolvedValue({ ok: true, json: async () => ({}) });
     await fetchResult(config, 'a/b?c');
@@ -55,12 +68,14 @@ describe('fetchResult', () => {
 });
 
 describe('closeSurvey', () => {
-  it('POSTs /close', async () => {
+  it('POSTs /close without Content-Type since there is no body', async () => {
     global.fetch.mockResolvedValue({ ok: true, json: async () => ({ ok: true }) });
     await closeSurvey(config, 'tok');
     expect(global.fetch).toHaveBeenCalledWith(
       'https://x.vercel.app/api/surveys/tok/close',
       expect.objectContaining({ method: 'POST' })
     );
+    const sentHeaders = global.fetch.mock.calls[0][1].headers;
+    expect(sentHeaders['Content-Type']).toBeUndefined();
   });
 });
