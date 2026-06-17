@@ -66,6 +66,25 @@ export default function SurveyForm({ token, doc }: Props) {
     }
   }
 
+  if (!started) {
+    return (
+      <main className="space-y-6 max-w-2xl mx-auto p-6">
+        <h1 className="text-2xl font-bold">{doc.pageTitle}</h1>
+        <p className="whitespace-pre-wrap text-sm leading-relaxed">{doc.pageDescription}</p>
+        <div className="text-sm text-ink/60">
+          全 {doc.questions.length + 2} 問（メールアドレス・氏名確認を含む）
+        </div>
+        <button
+          type="button"
+          onClick={() => setStarted(true)}
+          className="bg-coral text-white px-6 py-3 rounded font-medium hover:bg-coral-deep"
+        >
+          回答を始める
+        </button>
+      </main>
+    );
+  }
+
   let groupTitle: string | null = null;
 
   return (
