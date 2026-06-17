@@ -1,9 +1,9 @@
-// Clarus — server.js
+// Bridge — server.js
 // 本地小程序：localhost:3939。引擎は `claude -p` を子プロセスで叩く。
 
 import express from 'express';
 import multer from 'multer';
-import { spawn } from 'child_process';
+import { spawn, exec } from 'child_process';
 import fs from 'fs/promises';
 import fssync from 'fs';
 import path from 'path';
@@ -61,6 +61,21 @@ app.get(['/', '/index.html'], (req, res) => {
 app.use(express.static(DIRS.public, {
   setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
 }));
+// 旧 URL（/reports/<id>.html）→ ディスク上の slug 名へ透過リライト。
+// 既に slug 付きファイル名で来た場合は static 配信にそのまま委ねる。
+app.use('/reports', (req, res, next) => {
+  const m = req.path.match(/^\/([A-Za-z0-9_-]{1,64})\.(html|json)$/);
+  if (!m) return next();
+  const direct = path.join(DIRS.reports, `${m[1]}.${m[2]}`);
+  if (fssync.existsSync(direct)) return next();
+  let entries;
+  try { entries = fssync.readdirSync(DIRS.reports); }
+  catch { return next(); }
+  const suffix = `_${m[1]}.${m[2]}`;
+  const hit = entries.find((f) => f.endsWith(suffix));
+  if (hit) req.url = '/' + hit;
+  next();
+});
 app.use('/reports', express.static(DIRS.reports));
 
 const upload = multer({ dest: path.join(DIRS.processed, '_tmp') });
@@ -132,6 +147,44 @@ function toYaml(meta) {
   return lines.join('\n');
 }
 
+// ---------- レポート ファイル名ヘルパ ----------
+// レポートはディスク上で `<氏名>_<職種>_<YYYYMMDD>_<id>.json/html` の形で保存する。
+// id はファイル末尾の `_<id>.<ext>` で API から逆引きできる。旧 `<id>.json` も互換で読める。
+
+function sanitizeForFilename(s) {
+  if (!s) return '';
+  return String(s)
+    .replace(/[\/\\:*?"<>|]/g, '_')
+    .replace(/[\r\n\t]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(/\s/g, '_')
+    .replace(/_+/g, '_')
+    .slice(0, 50);
+}
+
+function buildReportSlug(json, originalBasename = '') {
+  const id = json.id;
+  const iso = json.createdAt || new Date().toISOString();
+  const dateStr = iso.slice(0, 10).replace(/-/g, '');
+  const namePart = json.name && String(json.name).trim()
+    ? sanitizeForFilename(json.name)
+    : `匿名_${sanitizeForFilename(originalBasename) || id}`;
+  const posPart = sanitizeForFilename(json.position || '');
+  return [namePart, posPart, dateStr, id].filter(Boolean).join('_');
+}
+
+function findReportPath(id, ext) {
+  const direct = path.join(DIRS.reports, `${id}.${ext}`);
+  if (fssync.existsSync(direct)) return direct;
+  let entries;
+  try { entries = fssync.readdirSync(DIRS.reports); }
+  catch { return null; }
+  const suffix = `_${id}.${ext}`;
+  const hit = entries.find((f) => f.endsWith(suffix));
+  return hit ? path.join(DIRS.reports, hit) : null;
+}
+
 // ---------- 履历抽出 ----------
 
 async function extractText(filePath, originalName) {
@@ -147,7 +200,9 @@ async function extractText(filePath, originalName) {
       return out.value || '';
     }
     if (ext === '.xlsx' || ext === '.xls') {
-      const wb = XLSX.readFile(filePath);
+      // SheetJS の ESM では readFile が namespace に無いため、buffer 経由で read を使う
+      const buf = await fs.readFile(filePath);
+      const wb = XLSX.read(buf, { type: 'buffer' });
       const parts = [];
       for (const name of wb.SheetNames) {
         const sheet = wb.Sheets[name];
@@ -161,13 +216,14 @@ async function extractText(filePath, originalName) {
     }
     return await fs.readFile(filePath, 'utf8');
   } catch (e) {
+    console.error(`[extractText 失敗] ${originalName} (${ext}) → ${e.message}`);
     return `[抽出失敗：${originalName} / ${e.message}]`;
   }
 }
 
 // ---------- claude 引擎呼び出し ----------
 
-const DEFAULT_MODEL = process.env.CLARUS_MODEL || 'claude-haiku-4-5';
+const DEFAULT_MODEL = process.env.BRIDGE_MODEL || 'claude-haiku-4-5';
 
 function callClaude(prompt, { model = DEFAULT_MODEL } = {}) {
   return new Promise((resolve, reject) => {
@@ -193,27 +249,55 @@ function callClaude(prompt, { model = DEFAULT_MODEL } = {}) {
 }
 
 // 履歷テキスト前処理：余分な空白・重複行を除去し、長さを抑える
+// CJK 文字間の単一スペースも除去（pdf-parse が日本語 PDF で各文字間に挿入する）
+// CSV ノイズも圧縮（xlsx → csv で大量に出る "，，，，"）
+const CJK_RE = /([、-ヿ一-鿿＀-￯]) (?=[、-ヿ一-鿿＀-￯])/g;
+
 function cleanText(text, maxChars = 15000) {
   if (!text) return '';
-  const normalized = text
+  let normalized = text
     .replace(/\r\n?/g, '\n')
-    .replace(/[ \t　]+/g, ' ')          // 全角スペース含めて連続空白を1個に
+    .replace(/[ \t　]+/g, ' ')             // 連続空白（全角含む）を1個に
     .replace(/^[ \t]+|[ \t]+$/gm, '');      // 行頭末尾の空白除去
+  // CJK 間の単一空白を消す（pdf-parse 由来の「業 種 構 築」→「業種構築」）
+  // 一度の replace では「業 種 構」のように奇数並びを完全には潰せないため 2 回まわす
+  normalized = normalized.replace(CJK_RE, '$1').replace(CJK_RE, '$1');
+
   const lines = normalized.split('\n');
-  const out = [];
+  const stage1 = [];
   let prev = '', blanks = 0;
   for (const ln of lines) {
-    const t = ln.trim();
+    let t = ln.trim();
+    // CSV ノイズ削減
+    if (t.includes(',')) {
+      t = t.replace(/,{2,}/g, ',').replace(/^,+|,+$/g, '').trim();
+    }
     if (!t) {
-      if (blanks < 1) out.push('');         // 連続空行は1行までに圧縮
+      if (blanks < 1) stage1.push('');
       blanks++;
       continue;
     }
     blanks = 0;
-    if (t === prev) continue;               // 直前行と同一なら捨てる（CSV化したシートで頻発）
-    out.push(t);
+    if (t === prev) continue;
+    stage1.push(t);
     prev = t;
   }
+
+  // 1〜2 文字の CJK だけの行が連続しているラン（pdf-parse の縦割れ）を 1 行に結合
+  const isSingleCJK = (s) => /^[、-ヿ一-鿿＀-￯・]{1,2}$/.test(s);
+  const out = [];
+  let run = [];
+  const flushRun = () => {
+    if (run.length >= 2) out.push(run.join(''));
+    else for (const x of run) out.push(x);
+    run = [];
+  };
+  for (const ln of stage1) {
+    if (isSingleCJK(ln)) run.push(ln);
+    else { flushRun(); out.push(ln); }
+  }
+  flushRun();
+
   return out.join('\n').slice(0, maxChars);
 }
 
@@ -361,9 +445,90 @@ function isValidId(id) {
 
 app.get('/api/reports/:id', async (req, res) => {
   if (!isValidId(req.params.id)) return res.status(400).json({ error: 'invalid id' });
-  const p = path.join(DIRS.reports, `${req.params.id}.json`);
-  if (!fssync.existsSync(p)) return res.status(404).json({ error: 'not found' });
+  const p = findReportPath(req.params.id, 'json');
+  if (!p) return res.status(404).json({ error: 'not found' });
   res.json(JSON.parse(await fs.readFile(p, 'utf8')));
+});
+
+// OS のデフォルトアプリでファイル / フォルダを開く（クロスプラットフォーム）
+// shell 経由で実行（spawn の引数クォート問題を回避）
+// 注意：targetPath は isValidId バリデート済みの id + 固定 DIRS から組み立てるため、シェル注入の心配はない
+function openInOS(targetPath, { select = false } = {}) {
+  const platform = process.platform;
+  let cmd;
+  if (platform === 'win32') {
+    // explorer.exe /select, は spawn だと「引数として 1 つに包まれる」問題が起きるため shell で実行
+    cmd = select
+      ? `explorer.exe /select,"${targetPath}"`
+      : `start "" "${targetPath}"`;
+  } else if (platform === 'darwin') {
+    cmd = select ? `open -R "${targetPath}"` : `open "${targetPath}"`;
+  } else {
+    cmd = `xdg-open "${select ? path.dirname(targetPath) : targetPath}"`;
+  }
+  try {
+    exec(cmd, (err) => {
+      // explorer は成功時も exit 1 を返すので無視
+      if (err && err.code !== 1) {
+        console.error('[openInOS]', cmd, err.message);
+      }
+    });
+    return true;
+  } catch (e) {
+    console.error('[openInOS] exec failed:', e.message);
+    return false;
+  }
+}
+
+// HTML レポートをデフォルトアプリで開く
+app.post('/api/reports/:id/open-file', async (req, res) => {
+  if (!isValidId(req.params.id)) return res.status(400).json({ error: 'invalid id' });
+  const filePath = findReportPath(req.params.id, 'html');
+  if (!filePath) return res.status(404).json({ error: 'not found' });
+  if (!openInOS(filePath)) return res.status(500).json({ error: 'open failed' });
+  res.json({ ok: true });
+});
+
+// レポートが入っているフォルダを開く（該当ファイルを選択状態で）
+app.post('/api/reports/:id/open-folder', async (req, res) => {
+  if (!isValidId(req.params.id)) return res.status(400).json({ error: 'invalid id' });
+  const filePath = findReportPath(req.params.id, 'html');
+  if (!openInOS(filePath || DIRS.reports, { select: !!filePath })) {
+    return res.status(500).json({ error: 'open failed' });
+  }
+  res.json({ ok: true });
+});
+
+// 候補者名のリネーム（JSON 更新 + HTML 再生成）
+app.post('/api/reports/:id/rename', async (req, res) => {
+  if (!isValidId(req.params.id)) return res.status(400).json({ error: 'invalid id' });
+  const { name } = req.body || {};
+  if (typeof name !== 'string') return res.status(400).json({ error: 'name required' });
+  const trimmed = name.trim().slice(0, 100);
+  if (!trimmed) return res.status(400).json({ error: 'empty name' });
+  const oldJsonPath = findReportPath(req.params.id, 'json');
+  const oldHtmlPath = findReportPath(req.params.id, 'html');
+  if (!oldJsonPath) return res.status(404).json({ error: 'not found' });
+  try {
+    const j = JSON.parse(await fs.readFile(oldJsonPath, 'utf8'));
+    j.name = trimmed;
+    const newSlug = buildReportSlug(j);
+    const newJsonPath = path.join(DIRS.reports, `${newSlug}.json`);
+    const newHtmlPath = path.join(DIRS.reports, `${newSlug}.html`);
+    await fs.writeFile(newJsonPath, JSON.stringify(j, null, 2), 'utf8');
+    const tpl = await fs.readFile(path.join(DIRS.templates, 'report_template.html'), 'utf8');
+    const html = renderReport(tpl, j);
+    await fs.writeFile(newHtmlPath, html, 'utf8');
+    if (oldJsonPath !== newJsonPath) {
+      try { await fs.unlink(oldJsonPath); } catch {}
+    }
+    if (oldHtmlPath && oldHtmlPath !== newHtmlPath) {
+      try { await fs.unlink(oldHtmlPath); } catch {}
+    }
+    res.json({ ok: true, name: trimmed });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  }
 });
 
 // 候補者レポート削除（JSON + HTML + 関連する questions も一緒に）
@@ -371,10 +536,10 @@ app.delete('/api/reports/:id', async (req, res) => {
   const { id } = req.params;
   if (!isValidId(id)) return res.status(400).json({ error: 'invalid id' });
   const targets = [
-    path.join(DIRS.reports, `${id}.json`),
-    path.join(DIRS.reports, `${id}.html`),
+    findReportPath(id, 'json'),
+    findReportPath(id, 'html'),
     path.join(DIRS.questions, `${id}.json`),
-  ];
+  ].filter(Boolean);
   const deleted = [];
   for (const p of targets) {
     if (fssync.existsSync(p)) {
@@ -388,7 +553,7 @@ app.delete('/api/reports/:id', async (req, res) => {
 
 // ---------- API: 履历 → 人物像要約（TASK=summary） ----------
 
-const CONCURRENCY = Number(process.env.CLARUS_CONCURRENCY || 3);
+const CONCURRENCY = Number(process.env.BRIDGE_CONCURRENCY || 3);
 
 function buildSummaryPrompt(id, text, reqMeta) {
   return [
@@ -422,10 +587,12 @@ async function summarizeOne(filePath, originalName, reqMeta, tpl) {
   json.createdAt = new Date().toISOString();
   // 我方メタデータ（要件画面で確定した職種名）を優先。Claude の出力は揺れるので最後の fallback に下げる。
   json.position = reqMeta.position || reqMeta.preset || json.position || '';
-  await fs.writeFile(path.join(DIRS.reports, `${id}.json`), JSON.stringify(json, null, 2), 'utf8');
+  const originalBasename = path.basename(originalName, path.extname(originalName));
+  const slug = buildReportSlug(json, originalBasename);
+  await fs.writeFile(path.join(DIRS.reports, `${slug}.json`), JSON.stringify(json, null, 2), 'utf8');
   const html = renderReport(tpl, json);
-  await fs.writeFile(path.join(DIRS.reports, `${id}.html`), html, 'utf8');
-  await fs.rename(filePath, path.join(DIRS.processed, `${id}__${originalName}`));
+  await fs.writeFile(path.join(DIRS.reports, `${slug}.html`), html, 'utf8');
+  await fs.rename(filePath, path.join(DIRS.processed, `${slug}__${originalName}`));
   return { id, report: json };
 }
 
@@ -470,7 +637,8 @@ app.post('/api/summarize-batch', upload.array('files', 50), async (req, res) => 
   }
 
   const files = req.files.map((f, i) => ({ i, f }));
-  emit({ event: 'start', total: files.length, concurrency: CONCURRENCY });
+  const n = Math.min(CONCURRENCY, files.length);
+  emit({ event: 'start', total: files.length, concurrency: n });
 
   let cursor = 0;
   async function worker() {
@@ -485,7 +653,6 @@ app.post('/api/summarize-batch', upload.array('files', 50), async (req, res) => 
       }
     }
   }
-  const n = Math.min(CONCURRENCY, files.length);
   await Promise.all(Array.from({ length: n }, () => worker()));
   emit({ event: 'end' });
   res.end();
@@ -562,8 +729,9 @@ function buildQuestionsPrompt(candidate, reqMeta) {
 app.post('/api/generate-questions', async (req, res) => {
   const { candidateId } = req.body || {};
   if (!candidateId) return res.status(400).json({ error: 'candidateId required' });
-  const candidatePath = path.join(DIRS.reports, `${candidateId}.json`);
-  if (!fssync.existsSync(candidatePath)) return res.status(404).json({ error: 'candidate not found' });
+  if (!isValidId(candidateId)) return res.status(400).json({ error: 'invalid candidateId' });
+  const candidatePath = findReportPath(candidateId, 'json');
+  if (!candidatePath) return res.status(404).json({ error: 'candidate not found' });
   try {
     const candidate = JSON.parse(await fs.readFile(candidatePath, 'utf8'));
     const reqMeta = await loadRequirementsMeta();
@@ -613,8 +781,8 @@ app.post('/api/regenerate-question', async (req, res) => {
   }
   if (!isValidId(candidateId)) return res.status(400).json({ error: 'invalid candidateId' });
   const qp = path.join(DIRS.questions, `${candidateId}.json`);
-  const rp = path.join(DIRS.reports, `${candidateId}.json`);
-  if (!fssync.existsSync(qp) || !fssync.existsSync(rp)) return res.status(404).json({ error: 'not found' });
+  const rp = findReportPath(candidateId, 'json');
+  if (!fssync.existsSync(qp) || !rp) return res.status(404).json({ error: 'not found' });
   try {
     const questions = JSON.parse(await fs.readFile(qp, 'utf8'));
     const candidate = JSON.parse(await fs.readFile(rp, 'utf8'));
@@ -672,5 +840,5 @@ app.post('/api/regenerate-question', async (req, res) => {
 // ---------- 起動 ----------
 
 app.listen(PORT, () => {
-  console.log(`Clarus listening: http://localhost:${PORT}`);
+  console.log(`Bridge listening: http://localhost:${PORT}`);
 });
