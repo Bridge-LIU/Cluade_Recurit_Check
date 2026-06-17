@@ -738,7 +738,7 @@ app.post('/api/questions/:id/fetch', async (req, res) => {
     updated.dispatch.closedAt = new Date().toISOString();
     updated.dispatch.closeReason = 'submitted';
     await writeQuestions(DIRS.questions, req.params.id, updated);
-    await closeSurvey(config, data.dispatch.token).catch(() => {});
+    await closeSurvey(config, data.dispatch.token).catch(e => console.warn('[survey] closeSurvey failed on auto-close:', e.message));
 
     res.json({ status: 'submitted' });
   } catch (e) {
@@ -754,7 +754,7 @@ app.post('/api/questions/:id/close', async (req, res) => {
     const config = await loadSurveyConfig(path.join(ROOT, '.clarus'));
     const data = await readQuestions(DIRS.questions, req.params.id);
     if (data.dispatch.token && config) {
-      await closeSurvey(config, data.dispatch.token).catch(() => {});
+      await closeSurvey(config, data.dispatch.token).catch(e => console.warn('[survey] closeSurvey failed on manual close:', e.message));
     }
     const updated = {
       ...data,
@@ -828,7 +828,9 @@ app.post('/api/regenerate-question', async (req, res) => {
 
     // 即時保存
     questions.groups[groupIndex].items[itemIndex] = { text: obj.text, aim: obj.aim || '' };
-    questions.updatedAt = new Date().toISOString();
+    const now = new Date().toISOString();
+    questions.updatedAt = now;
+    questions.editedAt = now;
     await fs.writeFile(qp, JSON.stringify(questions, null, 2), 'utf8');
 
     res.json({ ok: true, text: obj.text, aim: obj.aim || '' });
