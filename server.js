@@ -420,7 +420,8 @@ async function summarizeOne(filePath, originalName, reqMeta, tpl) {
   const json = tryParseJson(raw);
   json.id = id;
   json.createdAt = new Date().toISOString();
-  json.position = json.position || reqMeta.position || reqMeta.preset || '';
+  // 我方メタデータ（要件画面で確定した職種名）を優先。Claude の出力は揺れるので最後の fallback に下げる。
+  json.position = reqMeta.position || reqMeta.preset || json.position || '';
   await fs.writeFile(path.join(DIRS.reports, `${id}.json`), JSON.stringify(json, null, 2), 'utf8');
   const html = renderReport(tpl, json);
   await fs.writeFile(path.join(DIRS.reports, `${id}.html`), html, 'utf8');
