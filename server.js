@@ -15,7 +15,7 @@ import pdfParse from 'pdf-parse';
 import * as XLSX from 'xlsx';
 
 import { readQuestions, writeQuestions, readAnswers, writeAnswers, defaultDispatch } from './server/lib/questions-store.js';
-import { loadSettings, loadSurveyConfig } from './server/lib/settings.js';
+import { loadSettings, loadSurveyConfig, saveSettings, saveSurveyConfig } from './server/lib/settings.js';
 import { expandTemplate, buildTemplateVars } from './server/lib/template.js';
 import { createSurvey, fetchResult, closeSurvey } from './server/lib/survey-client.js';
 
@@ -770,6 +770,54 @@ app.post('/api/questions/:id/close', async (req, res) => {
   } catch (e) {
     if (e.code === 'ENOENT') return res.status(404).json({ error: 'not found' });
     res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+// 設定取得（HR 編集可フィールド＋ Vercel 連携情報、APIキーはマスク）
+app.get('/api/settings', async (_req, res) => {
+  try {
+    const settings = await loadSettings(DIRS.presets);
+    const config = await loadSurveyConfig(path.join(ROOT, '.clarus'));
+    res.json({
+      ...settings,
+      surveyEndpoint: config?.endpoint ?? '',
+      surveyApiKeyMasked: config?.apiKey ? '••••••••' + config.apiKey.slice(-4) : '',
+    });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+// 設定保存（settings.json と .clarus/survey-config.json に分離して書き込み）
+app.post('/api/settings', async (req, res) => {
+  try {
+    const { surveyEndpoint, surveyApiKey, ...rest } = req.body;
+    await saveSettings(DIRS.presets, rest);
+    if (surveyEndpoint || surveyApiKey) {
+      const cur = await loadSurveyConfig(path.join(ROOT, '.clarus')) ?? {};
+      await saveSurveyConfig(path.join(ROOT, '.clarus'), {
+        endpoint: surveyEndpoint ?? cur.endpoint,
+        apiKey: surveyApiKey || cur.apiKey,
+        pollIntervalMs: 300000,
+      });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+// Vercel 疎通確認（bogus token で 404 が返れば到達+認証 OK）
+app.get('/api/settings/survey-test', async (_req, res) => {
+  try {
+    const config = await loadSurveyConfig(path.join(ROOT, '.clarus'));
+    if (!config) return res.status(412).json({ error: 'no_config' });
+    const r = await fetch(`${config.endpoint}/api/surveys/test-token/result`, {
+      headers: { Authorization: `Bearer ${config.apiKey}` },
+    });
+    res.json({ reachable: r.status !== 401 && r.status < 500, status: r.status });
+  } catch (e) {
+    res.json({ reachable: false, error: String(e.message || e) });
   }
 });
 
