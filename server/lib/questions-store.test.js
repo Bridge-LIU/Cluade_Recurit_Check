@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'fs/promises';
 import path from 'path';
 import os from 'os';
-import { readQuestions, writeQuestions, defaultDispatch } from './questions-store.js';
+import { readQuestions, writeQuestions, readAnswers, defaultDispatch } from './questions-store.js';
 
 let tmpDir;
 beforeEach(async () => {
@@ -33,6 +33,32 @@ describe('readQuestions', () => {
     const r = await readQuestions(tmpDir, 'a1');
     expect(r.status).toBe('sent');
     expect(r.dispatch.token).toBe('abc');
+  });
+
+  it('rejects with ENOENT when file is missing', async () => {
+    await expect(readQuestions(tmpDir, 'does-not-exist'))
+      .rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('fills missing dispatch keys with null when only some are present', async () => {
+    const partial = {
+      candidateId: 'a1', candidateName: 'X', groups: [],
+      status: 'sent',
+      dispatch: { token: 'xyz' },
+    };
+    await fs.writeFile(path.join(tmpDir, 'a1.json'), JSON.stringify(partial));
+    const r = await readQuestions(tmpDir, 'a1');
+    expect(r.dispatch.token).toBe('xyz');
+    expect(r.dispatch.surveyUrl).toBeNull();
+    expect(r.dispatch.expiresAt).toBeNull();
+    expect(r.dispatch.closedAt).toBeNull();
+  });
+});
+
+describe('readAnswers', () => {
+  it('returns null when file is missing', async () => {
+    const r = await readAnswers(tmpDir, 'does-not-exist');
+    expect(r).toBeNull();
   });
 });
 
