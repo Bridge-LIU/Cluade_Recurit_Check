@@ -18,6 +18,7 @@ import { readQuestions, writeQuestions, readAnswers, writeAnswers, defaultDispat
 import { loadSettings, loadSurveyConfig, saveSettings, saveSurveyConfig } from './server/lib/settings.js';
 import { expandTemplate, buildTemplateVars } from './server/lib/template.js';
 import { createSurvey, fetchResult, closeSurvey } from './server/lib/survey-client.js';
+import { startPoller } from './server/lib/poller.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -889,6 +890,12 @@ app.post('/api/regenerate-question', async (req, res) => {
 });
 
 // ---------- 起動 ----------
+
+startPoller({
+  questionsDir: DIRS.questions,
+  clarusDir: path.join(ROOT, '.clarus'),
+  intervalMs: 300000,
+});
 
 app.listen(PORT, () => {
   console.log(`Clarus listening: http://localhost:${PORT}`);

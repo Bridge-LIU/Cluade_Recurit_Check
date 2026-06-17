@@ -23,14 +23,16 @@ export async function createSurvey(config, payload) {
   }, config);
 }
 
-export async function fetchResult(config, token) {
+export async function fetchResult(config, token, { signal } = {}) {
   return callJson(`${config.endpoint}/api/surveys/${encodeURIComponent(token)}/result?ack=1`, {
     method: 'GET',
+    signal,
   }, config);
 }
 
-export async function closeSurvey(config, token) {
+export async function closeSurvey(config, token, { signal } = {}) {
   return callJson(`${config.endpoint}/api/surveys/${encodeURIComponent(token)}/close`, {
     method: 'POST',
+    signal,
   }, config);
 }

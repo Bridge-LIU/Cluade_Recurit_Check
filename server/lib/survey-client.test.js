@@ -65,6 +65,16 @@ describe('fetchResult', () => {
     const url = global.fetch.mock.calls[0][0];
     expect(url).toContain('a%2Fb%3Fc');
   });
+
+  it('fetchResult passes signal to fetch when provided', async () => {
+    global.fetch.mockResolvedValue({ ok: true, json: async () => ({}) });
+    const ctrl = new AbortController();
+    await fetchResult(config, 'tok', { signal: ctrl.signal });
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ signal: ctrl.signal })
+    );
+  });
 });
 
 describe('closeSurvey', () => {
