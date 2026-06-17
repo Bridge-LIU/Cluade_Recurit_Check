@@ -1,8 +1,8 @@
-// Clarus 管理画面 — フロント
+// Bridge 管理画面 — フロント
 
 const PAGE_TITLES = {
   req:  ['募集要件', 'プリセットを選んで、職種ごとの必須スキルと評価の重みを設定します。'],
-  new:  ['新規評価', '履歷スキルシートをアップロードして人物像を要約します。'],
+  new:  ['スキルシート', '履歷スキルシートをアップロードして人物像を要約します。'],
   q:    ['質問生成', '①要件 ＋ ②要約 から候補者向け WEB アンケートを生成します（第二期）。'],
   hist: ['評価履歴', 'これまでの人物像要約を一覧表示します。'],
   set:  ['設定', '保存先と引擎の状態。'],
@@ -75,6 +75,35 @@ function toast(msg) {
 
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// テキスト入力モーダル（prompt() 置き換え）
+function inputDialog({ title = '入力', message = '', value = '', placeholder = '', confirmText = 'OK', cancelText = 'キャンセル' } = {}) {
+  return new Promise(resolve => {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'app-dialog';
+    dlg.innerHTML = `
+      <form method="dialog" class="dlg-body">
+        <h3>${escapeHtml(title)}</h3>
+        ${message ? `<p>${escapeHtml(message)}</p>` : ''}
+        <input class="set-input dlg-input" type="text" placeholder="${escapeHtml(placeholder)}" value="${escapeHtml(value)}" required style="margin-top:12px" />
+        <div class="dlg-actions">
+          <button value="cancel" class="btn-ghost">${escapeHtml(cancelText)}</button>
+          <button value="confirm" class="btn-primary">${escapeHtml(confirmText)}</button>
+        </div>
+      </form>
+    `;
+    document.body.appendChild(dlg);
+    const input = dlg.querySelector('.dlg-input');
+    dlg.addEventListener('close', () => {
+      const result = dlg.returnValue === 'confirm' ? input.value.trim() : null;
+      dlg.remove();
+      resolve(result);
+    });
+    dlg.showModal();
+    input.focus();
+    input.select();
+  });
 }
 
 // HTML5 <dialog> ベースの確認モーダル（confirm() 置き換え）
@@ -698,44 +727,298 @@ async function loadHistory() {
     return;
   }
   empty.style.display = 'none';
-  host.innerHTML = list.map(r => `
-    <div class="h-card-wrap">
+
+  // 募集要件（position）ごとにグルーピング
+  const groups = new Map();
+  for (const r of list) {
+    const key = (r.position && r.position.trim()) || '未分類';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(r);
+  }
+  // 最新の評価が新しい順にセクションを並べる
+  const sections = Array.from(groups.entries()).sort((a, b) => {
+    const ta = Math.max(...a[1].map(r => new Date(r.createdAt || 0).getTime()));
+    const tb = Math.max(...b[1].map(r => new Date(r.createdAt || 0).getTime()));
+    return tb - ta;
+  });
+
+  const cardHtml = (r) => {
+    const selectedCls = histSel.ids.has(r.id) ? ' selected' : '';
+    return `
+    <div class="h-card-wrap${selectedCls}" data-id="${escapeHtml(r.id)}">
+      <div class="h-card-check" role="checkbox" tabindex="0" aria-label="選択">✓</div>
       <a class="h-card" href="/reports/${encodeURIComponent(r.id)}.html" target="_blank" style="text-decoration:none; color:inherit">
         <div class="h-name">${escapeHtml(r.name)}</div>
         <div class="h-pos">${escapeHtml(r.position)}</div>
         <div class="h-sum">${escapeHtml(r.summary)}</div>
         <div class="h-foot">${escapeHtml((r.createdAt||'').replace('T',' ').slice(0,16))} ｜ ${escapeHtml(r.id)}</div>
       </a>
-      <button class="h-del" data-id="${escapeHtml(r.id)}" data-name="${escapeHtml(r.name)}" title="このレポートを削除">×</button>
+      <div class="h-menu-wrap">
+        <button class="h-menu-btn" data-id="${escapeHtml(r.id)}" data-name="${escapeHtml(r.name)}" title="メニュー">⋮</button>
+        <div class="h-menu">
+          <div class="h-menu-item" data-act="open-file"><span class="mi-ico">⎘</span>ローカルで開く</div>
+          <div class="h-menu-item" data-act="open-folder"><span class="mi-ico">▤</span>フォルダを開く</div>
+          <div class="h-menu-item" data-act="rename"><span class="mi-ico">✎</span>名前を変更</div>
+          <div class="h-menu-sep"></div>
+          <div class="h-menu-item danger" data-act="delete"><span class="mi-ico">🗑</span>削除</div>
+        </div>
+      </div>
     </div>
+  `;};
+
+  host.innerHTML = sections.map(([pos, items]) => `
+    <section class="h-group">
+      <header class="h-group-head">
+        <h3>${escapeHtml(pos)}</h3>
+        <span class="h-group-count">${items.length} 名</span>
+      </header>
+      <div class="history-grid">
+        ${items.map(cardHtml).join('')}
+      </div>
+    </section>
   `).join('');
 
-  $$('#hist .h-del').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
+  // 削除でカード総数が減った場合、選択状態の id も整理
+  const liveIds = new Set(list.map(r => r.id));
+  for (const id of histSel.ids) if (!liveIds.has(id)) histSel.ids.delete(id);
+  updateHistBulkBar();
+
+  $$('#hist .h-menu-btn').forEach(btn => {
+    btn.addEventListener('click', (e) => {
       e.preventDefault(); e.stopPropagation();
+      const menu = btn.nextElementSibling;
+      const isOpen = menu.classList.contains('open');
+      $$('#hist .h-menu.open').forEach(m => m.classList.remove('open'));
+      $$('#hist .h-menu-btn.on').forEach(b => b.classList.remove('on'));
+      if (!isOpen) { menu.classList.add('open'); btn.classList.add('on'); }
+    });
+  });
+
+  $$('#hist .h-menu-item').forEach(item => {
+    item.addEventListener('click', async (e) => {
+      e.preventDefault(); e.stopPropagation();
+      const wrap = item.closest('.h-menu-wrap');
+      const btn = wrap.querySelector('.h-menu-btn');
       const id = btn.dataset.id;
       const name = btn.dataset.name;
-      const ok = await confirmDialog({
-        title: '評価履歴から削除',
-        message: `「${name}」を評価履歴から削除します。\nこの操作は取り消せません。`,
-        confirmText: '削除する',
-        cancelText: 'キャンセル',
-        danger: true,
-      });
-      if (!ok) return;
-      btn.disabled = true;
+      wrap.querySelector('.h-menu').classList.remove('open');
+      btn.classList.remove('on');
+      const act = item.dataset.act;
       try {
-        const r = await fetch(`/api/reports/${encodeURIComponent(id)}`, { method:'DELETE' }).then(r => r.json());
-        if (r.error) throw new Error(r.error);
-        toast(`削除しました（${r.deleted.length} ファイル）`);
-        loadHistory();
+        if (act === 'delete') {
+          const ok = await confirmDialog({
+            title: '評価履歴から削除',
+            message: `「${name}」を評価履歴から削除します。\nこの操作は取り消せません。`,
+            confirmText: '削除する', cancelText: 'キャンセル', danger: true,
+          });
+          if (!ok) return;
+          const r = await fetch(`/api/reports/${encodeURIComponent(id)}`, { method:'DELETE' }).then(r => r.json());
+          if (r.error) throw new Error(r.error);
+          toast(`削除しました（${r.deleted.length} ファイル）`);
+          loadHistory();
+        } else if (act === 'open-file') {
+          const r = await fetch(`/api/reports/${encodeURIComponent(id)}/open-file`, { method:'POST' }).then(r => r.json());
+          if (r.error) throw new Error(r.error);
+          toast('ローカルアプリで開きました');
+        } else if (act === 'open-folder') {
+          const r = await fetch(`/api/reports/${encodeURIComponent(id)}/open-folder`, { method:'POST' }).then(r => r.json());
+          if (r.error) throw new Error(r.error);
+          toast('フォルダを開きました');
+        } else if (act === 'rename') {
+          const newName = await inputDialog({
+            title: '候補者名を変更',
+            message: '新しい名前を入力してください。レポートも再生成されます。',
+            value: name,
+            confirmText: '変更する',
+          });
+          if (newName == null || newName === '' || newName === name) return;
+          const r = await fetch(`/api/reports/${encodeURIComponent(id)}/rename`, {
+            method:'POST', headers:{'content-type':'application/json'},
+            body: JSON.stringify({ name: newName }),
+          }).then(r => r.json());
+          if (r.error) throw new Error(r.error);
+          toast('名前を変更しました');
+          loadHistory();
+        }
       } catch (err) {
-        toast('削除失敗：' + err.message);
-        btn.disabled = false;
+        toast('失敗：' + err.message);
       }
     });
   });
 }
+
+// ===== 評価履歴 — チェックボックス選択 =====
+const histSel = { ids: new Set() };
+
+function updateHistBulkBar() {
+  const c = histSel.ids.size;
+  const bar = $('#histBulkBar');
+  const cnt = $('#histSelCount');
+  if (cnt) cnt.textContent = c;
+  if (bar) bar.hidden = c === 0;
+}
+function clearHistSelection() {
+  histSel.ids.clear();
+  $$('#hist .h-card-wrap.selected').forEach(w => w.classList.remove('selected'));
+  updateHistBulkBar();
+}
+function selectAllHist() {
+  $$('#hist .h-card-wrap').forEach(w => {
+    histSel.ids.add(w.dataset.id);
+    w.classList.add('selected');
+  });
+  updateHistBulkBar();
+}
+async function deleteSelectedHist() {
+  const ids = Array.from(histSel.ids);
+  if (!ids.length) return;
+  const ok = await confirmDialog({
+    title: '一括削除',
+    message: `${ids.length} 件の評価履歴を削除します。\nこの操作は取り消せません。`,
+    confirmText: '削除する', cancelText: 'キャンセル', danger: true,
+  });
+  if (!ok) return;
+  const results = await Promise.allSettled(
+    ids.map(id => fetch(`/api/reports/${encodeURIComponent(id)}`, { method:'DELETE' }).then(r => r.json()))
+  );
+  const ng = results.filter(r => r.status === 'rejected' || (r.value && r.value.error)).length;
+  const ok2 = results.length - ng;
+  toast(ng ? `${ok2} 件削除、${ng} 件失敗` : `${ok2} 件削除しました`);
+  histSel.ids.clear();
+  loadHistory();
+}
+
+function toggleHistCardSelection(wrap) {
+  const id = wrap.dataset.id;
+  if (!id) return;
+  if (histSel.ids.has(id)) { histSel.ids.delete(id); wrap.classList.remove('selected'); }
+  else { histSel.ids.add(id); wrap.classList.add('selected'); }
+  updateHistBulkBar();
+}
+
+if (!window.__histToolbarBound) {
+  window.__histToolbarBound = true;
+  $('#histSelectCancel')?.addEventListener('click', clearHistSelection);
+  $('#histSelectAll')?.addEventListener('click', selectAllHist);
+  $('#histDeleteSelected')?.addEventListener('click', deleteSelectedHist);
+
+  // チェックボックスのクリックのみ選択トグル。カード本体のリンク・3 点メニューはそのまま。
+  $('#hist')?.addEventListener('click', (e) => {
+    const check = e.target.closest('.h-card-check');
+    if (!check) return;
+    e.preventDefault(); e.stopPropagation();
+    const wrap = check.closest('.h-card-wrap');
+    if (wrap) toggleHistCardSelection(wrap);
+  });
+  // キーボードでチェックボックスを操作（Space/Enter）
+  $('#hist')?.addEventListener('keydown', (e) => {
+    if (e.key !== ' ' && e.key !== 'Enter') return;
+    const check = e.target.closest('.h-card-check');
+    if (!check) return;
+    e.preventDefault();
+    const wrap = check.closest('.h-card-wrap');
+    if (wrap) toggleHistCardSelection(wrap);
+  });
+}
+
+// メニュー外クリックで閉じる（loadHistory の度に再アタッチを避けるため一回だけ）
+if (!window.__hMenuOutsideBound) {
+  window.__hMenuOutsideBound = true;
+  document.addEventListener('click', () => {
+    $$('.h-menu.open').forEach(m => m.classList.remove('open'));
+    $$('.h-menu-btn.on').forEach(b => b.classList.remove('on'));
+  });
+}
+
+// ===== Custom select shell（原生 <select> をブランドに統一） =====
+function enhanceSelect(sel) {
+  if (sel.dataset.enhanced) return;
+  sel.dataset.enhanced = '1';
+  const shell = document.createElement('div');
+  shell.className = 'sel';
+  shell.innerHTML = `
+    <button type="button" class="sel-trigger" aria-haspopup="listbox" aria-expanded="false">
+      <span class="sel-value"></span>
+      <span class="sel-arrow" aria-hidden="true">▾</span>
+    </button>
+    <div class="sel-pop" role="listbox" hidden></div>
+  `;
+  // <select> のレイアウト用 inline style を shell に移し、本体は不可視化
+  shell.setAttribute('style', sel.getAttribute('style') || '');
+  sel.setAttribute('style', 'display:none');
+  sel.parentNode.insertBefore(shell, sel);
+  const trigger = shell.querySelector('.sel-trigger');
+  const valueEl = shell.querySelector('.sel-value');
+  const pop = shell.querySelector('.sel-pop');
+  let hi = -1;
+
+  function render() {
+    pop.innerHTML = Array.from(sel.options).map((o, i) =>
+      `<div class="sel-opt${o.value === sel.value ? ' on' : ''}${!o.value ? ' placeholder' : ''}" data-i="${i}" role="option">${escapeHtml(o.textContent)}</div>`
+    ).join('');
+    const cur = sel.options[sel.selectedIndex];
+    valueEl.textContent = cur ? cur.textContent : '';
+    valueEl.classList.toggle('placeholder', !sel.value);
+    highlight();
+  }
+  function highlight() {
+    pop.querySelectorAll('.sel-opt').forEach((o, i) => o.classList.toggle('hi', i === hi));
+    const cur = pop.querySelector('.sel-opt.hi');
+    if (cur) cur.scrollIntoView({ block: 'nearest' });
+  }
+  function open() {
+    closeAllSel();
+    pop.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+    hi = Math.max(0, sel.selectedIndex);
+    highlight();
+  }
+  function close() {
+    pop.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+    hi = -1;
+  }
+  function pick(i) {
+    const opt = sel.options[i];
+    if (!opt) return;
+    sel.value = opt.value;
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    render();
+    close();
+    trigger.focus();
+  }
+
+  render();
+  new MutationObserver(render).observe(sel, { childList: true, subtree: true });
+
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    pop.hidden ? open() : close();
+  });
+  trigger.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown') {
+      e.preventDefault(); open();
+    }
+  });
+  pop.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const opt = e.target.closest('.sel-opt');
+    if (opt) pick(Number(opt.dataset.i));
+  });
+  shell.addEventListener('keydown', (e) => {
+    if (pop.hidden) return;
+    const n = sel.options.length;
+    if (e.key === 'ArrowDown') { e.preventDefault(); hi = (hi + 1) % n; highlight(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); hi = (hi - 1 + n) % n; highlight(); }
+    else if (e.key === 'Enter') { e.preventDefault(); pick(hi); }
+    else if (e.key === 'Escape') { e.preventDefault(); close(); trigger.focus(); }
+  });
+}
+function closeAllSel() {
+  document.querySelectorAll('.sel-pop:not([hidden])').forEach(p => p.hidden = true);
+  document.querySelectorAll('.sel-trigger[aria-expanded="true"]').forEach(t => t.setAttribute('aria-expanded', 'false'));
+}
+document.addEventListener('click', closeAllSel);
 
 // ===== Question tab =====
 let qLastList = [];
@@ -743,6 +1026,7 @@ let qLastList = [];
 async function loadQTab() {
   refreshReqStrip();
   const sel = $('#qCandidate');
+  enhanceSelect(sel);
   sel.innerHTML = '<option value="">読み込み中…</option>';
   try {
     qLastList = await fetch('/api/reports').then(r => r.json());

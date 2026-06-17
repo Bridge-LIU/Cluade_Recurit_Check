@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=1280" />
-  <title>Clarus — AI 採用評価</title>
+  <title>Bridge — AI 採用評価</title>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;600;700&family=Zen+Kaku+Gothic+New:wght@500;700&family=Space+Grotesk:wght@500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css" />
 </head>
@@ -12,9 +12,9 @@
     <!-- ===== Sidebar ===== -->
     <aside class="sidebar">
       <div class="brand">
-        <div class="logo">C</div>
+        <div class="logo">B</div>
         <div>
-          <div class="name">Clarus</div>
+          <div class="name">Bridge</div>
           <div class="sub">AI 採用評価</div>
         </div>
       </div>
@@ -25,7 +25,7 @@
         </div>
         <div class="navitem" data-page="new">
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 5v14M5 12h14"/></svg>
-          新規評価
+          スキルシート
         </div>
         <div class="navitem" data-page="q">
           <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9.5 9a2.5 2.5 0 1 1 4.5 1.5c-1 .8-2 1.2-2 2.5M12 17h.01"/></svg>
@@ -194,7 +194,14 @@
           <div class="card">
             <h2>評価履歴</h2>
             <div class="desc">これまでに人物像要約を生成した候補者の一覧。カードをクリックでレポートを開きます。</div>
-            <div id="hist" class="history-grid"></div>
+            <div id="histBulkBar" class="hist-bulk" hidden>
+              <span class="hist-bulk-count"><b id="histSelCount">0</b> 件選択中</span>
+              <span style="flex:1"></span>
+              <button id="histSelectAll" class="btn-ghost" type="button">全選択</button>
+              <button id="histDeleteSelected" class="btn-ghost danger" type="button">選択を削除</button>
+              <button id="histSelectCancel" class="btn-ghost" type="button">解除</button>
+            </div>
+            <div id="hist" class="hist-stack"></div>
             <div id="histEmpty" class="empty" style="display:none">
               <div class="big">∅</div>
               まだ評価がありません。「新規評価」から履歷をアップロードしてください。
@@ -207,10 +214,24 @@
           <div class="card">
             <h2>設定</h2>
             <div class="desc">本地保存のパスと引擎の状態を表示します。</div>
-            <div class="row"><div class="label">サーバ</div><div><code>http://localhost:3939</code></div></div>
-            <div class="row"><div class="label">データ格納</div><div><code>reports/</code>（HTML＋JSON）／ <code>requirements/</code>／ <code>presets/</code></div></div>
-            <div class="row"><div class="label">引擎</div><div>本地 Claude Code（<code>claude -p</code>）</div></div>
-            <div class="row"><div class="label">面接転写</div><div>Teams 自带文字起こしを利用（本ツールでは転写しない）</div></div>
+            <div class="form-stack">
+              <div class="form-field">
+                <label class="ff-label">サーバ</label>
+                <div class="ff-value"><code>http://localhost:3939</code></div>
+              </div>
+              <div class="form-field">
+                <label class="ff-label">データ格納</label>
+                <div class="ff-value"><code>reports/</code>（HTML＋JSON）／ <code>requirements/</code>／ <code>presets/</code></div>
+              </div>
+              <div class="form-field">
+                <label class="ff-label">引擎</label>
+                <div class="ff-value">本地 Claude Code（<code>claude -p</code>）</div>
+              </div>
+              <div class="form-field">
+                <label class="ff-label">面接転写</label>
+                <div class="ff-value">Teams 自带文字起こしを利用（本ツールでは転写しない）</div>
+              </div>
+            </div>
           </div>
         </div>
 
