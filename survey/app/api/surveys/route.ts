@@ -3,15 +3,22 @@ import { requireApiKey } from '@/lib/auth';
 import { redis, k } from '@/lib/redis';
 import { generateToken } from '@/lib/token';
 import { DispatchPayloadSchema } from '@/lib/schema';
+import { log } from '@/lib/logger';
 import type { SurveyDocument } from '@shared/types';
+
+export const runtime = 'edge';
 
 export async function POST(req: NextRequest) {
   const auth = requireApiKey(req);
-  if (!auth.ok) return NextResponse.json({ error: 'unauthorized' }, { status: auth.status });
+  if (!auth.ok) {
+    log.warn('surveys.dispatch.unauthorized', { status: auth.status });
+    return NextResponse.json({ error: 'unauthorized' }, { status: auth.status });
+  }
 
   const body = await req.json().catch(() => null);
   const parsed = DispatchPayloadSchema.safeParse(body);
   if (!parsed.success) {
+    log.warn('surveys.dispatch.invalid');
     return NextResponse.json({ error: 'invalid', details: parsed.error.format() }, { status: 400 });
   }
 
@@ -45,6 +52,7 @@ export async function POST(req: NextRequest) {
   await redis.set(k.survey(token), doc, { ex: p.ttlSeconds });
 
   const baseUrl = process.env.NEXT_PUBLIC_BASE_URL ?? 'http://localhost:3000';
+  log.info('surveys.dispatch.ok', { token, candidateName: p.candidateName, position: p.position, ttlSeconds: p.ttlSeconds });
   return NextResponse.json({
     token,
     surveyUrl: `${baseUrl}/q/${token}`,

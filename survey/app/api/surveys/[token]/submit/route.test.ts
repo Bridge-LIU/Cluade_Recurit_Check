@@ -2,11 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { POST } from './route';
 import { NextRequest } from 'next/server';
 
-const redisMock = vi.hoisted(() => ({
-  exists: vi.fn(),
-  get: vi.fn(),
+const pipelineMock = vi.hoisted(() => ({
   set: vi.fn(),
   sadd: vi.fn(),
+  exec: vi.fn(),
+}));
+
+const redisMock = vi.hoisted(() => ({
+  get: vi.fn(),
+  set: vi.fn(),
+  pipeline: vi.fn(),
 }));
 
 vi.mock('@/lib/redis', () => ({
@@ -38,6 +43,11 @@ describe('POST /api/surveys/[token]/submit', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     redisMock.get.mockResolvedValue({ expiresAt: new Date(Date.now() + 1000_000).toISOString() });
+    redisMock.set.mockResolvedValue('OK');
+    redisMock.pipeline.mockReturnValue(pipelineMock);
+    pipelineMock.set.mockReturnValue(pipelineMock);
+    pipelineMock.sadd.mockReturnValue(pipelineMock);
+    pipelineMock.exec.mockResolvedValue([]);
   });
 
   it('returns 410 if survey expired/missing', async () => {
@@ -47,23 +57,22 @@ describe('POST /api/surveys/[token]/submit', () => {
   });
 
   it('returns 409 if lock already set', async () => {
-    redisMock.exists.mockResolvedValueOnce(1);
+    redisMock.set.mockResolvedValueOnce(null);
     const res = await POST(makeReq(validBody), { params: { token: 'x' } });
     expect(res.status).toBe(409);
   });
 
   it('returns 400 on invalid email', async () => {
-    redisMock.exists.mockResolvedValueOnce(0);
     const res = await POST(makeReq({ ...validBody, email: 'not-an-email' }), { params: { token: 'x' } });
     expect(res.status).toBe(400);
   });
 
   it('stores response and sets lock on success', async () => {
-    redisMock.exists.mockResolvedValueOnce(0);
     const res = await POST(makeReq(validBody), { params: { token: 'x' } });
     expect(res.status).toBe(200);
     expect(redisMock.set).toHaveBeenCalledWith('q:x:lock', '1', expect.objectContaining({ nx: true }));
-    expect(redisMock.set).toHaveBeenCalledWith('q:x:resp', expect.any(Object), expect.any(Object));
-    expect(redisMock.sadd).toHaveBeenCalledWith('pending:hr', 'x');
+    expect(pipelineMock.set).toHaveBeenCalledWith('q:x:resp', expect.any(Object), expect.any(Object));
+    expect(pipelineMock.sadd).toHaveBeenCalledWith('pending:hr', 'x');
+    expect(pipelineMock.exec).toHaveBeenCalled();
   });
 });
