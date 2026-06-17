@@ -814,6 +814,7 @@ app.get('/api/settings/survey-test', async (_req, res) => {
     if (!config) return res.status(412).json({ error: 'no_config' });
     const r = await fetch(`${config.endpoint}/api/surveys/test-token/result`, {
       headers: { Authorization: `Bearer ${config.apiKey}` },
+      signal: AbortSignal.timeout(5000),
     });
     res.json({ reachable: r.status !== 401 && r.status < 500, status: r.status });
   } catch (e) {
