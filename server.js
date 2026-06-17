@@ -19,6 +19,7 @@ import { loadSettings, loadSurveyConfig, saveSettings, saveSurveyConfig } from '
 import { expandTemplate, buildTemplateVars } from './server/lib/template.js';
 import { createSurvey, fetchResult, closeSurvey } from './server/lib/survey-client.js';
 import { startPoller } from './server/lib/poller.js';
+import { scoreAnswers } from './server/lib/scoring.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -881,7 +882,7 @@ app.post('/api/questions/:id/fetch', async (req, res) => {
     }
 
     const resp = result.response;
-    await writeAnswers(DIRS.questions, req.params.id, {
+    const answersData = {
       candidateId: data.candidateId,
       token: data.dispatch.token,
       fetchedAt: new Date().toISOString(),
@@ -902,7 +903,16 @@ app.post('/api/questions/:id/fetch', async (req, res) => {
         })
       ),
       supplementary: resp.supplementary,
-    });
+    };
+    await writeAnswers(DIRS.questions, req.params.id, answersData);
+
+    // Claude で各回答を 0-100 採点（best-effort、失敗しても answers は残す）
+    try {
+      const scored = await scoreAnswers(answersData);
+      await writeAnswers(DIRS.questions, req.params.id, scored);
+    } catch (e) {
+      console.warn(`[scoring] ${req.params.id}:`, e.message);
+    }
 
     updated.status = 'submitted';
     updated.dispatch.closedAt = new Date().toISOString();

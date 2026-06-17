@@ -722,6 +722,10 @@ async function loadHistory() {
   const empty = $('#histEmpty');
   host.innerHTML = '<div class="empty"><span class="spinner"></span> 読み込み中…</div>';
   const list = await fetch('/api/reports').then(r => r.json());
+  // 削除でカード総数が減った場合、選択状態の id も整理（早期 return より前で行う）
+  const liveIds = new Set(list.map(r => r.id));
+  for (const id of histSel.ids) if (!liveIds.has(id)) histSel.ids.delete(id);
+  updateHistBulkBar();
   if (!list.length) {
     host.innerHTML = '';
     empty.style.display = 'block';
@@ -778,11 +782,6 @@ async function loadHistory() {
       </div>
     </section>
   `).join('');
-
-  // 削除でカード総数が減った場合、選択状態の id も整理
-  const liveIds = new Set(list.map(r => r.id));
-  for (const id of histSel.ids) if (!liveIds.has(id)) histSel.ids.delete(id);
-  updateHistBulkBar();
 
   $$('#hist .h-menu-btn').forEach(btn => {
     btn.addEventListener('click', (e) => {
@@ -1329,24 +1328,45 @@ function remainingDays(iso) {
   return Math.max(0, d);
 }
 
+function scoreColor(s) {
+  if (typeof s !== 'number') return '#999';
+  if (s >= 80) return '#226022';
+  if (s >= 60) return '#8a6500';
+  return '#8a2222';
+}
+
 function renderAnswersPanel(a) {
   const host = $('#qAnswersPanel');
   if (!host || !a) return;
   host.style.display = 'block';
   const submittedAt = (a.respondent?.submittedAt || '').replace('T', ' ').slice(0, 16);
+  const avg = typeof a.averageScore === 'number' ? a.averageScore : null;
   host.innerHTML = `
     <div class="card" style="margin-top:16px">
       <h3>取込済の回答</h3>
       <div class="hint">提出日時：${escapeHtml(submittedAt)}</div>
       <div><b>メアド：</b>${escapeHtml(a.respondent?.email || '')}</div>
       <div><b>氏名確認：</b>${escapeHtml(a.respondent?.nameConfirmed || '')}</div>
+      ${avg !== null ? `
+        <div style="margin-top:12px; padding:12px; background:#f5f0e8; border-radius:8px; display:flex; align-items:center; gap:14px">
+          <div style="font-size:13px; color:#555">平均スコア</div>
+          <div style="font-size:32px; font-weight:700; color:${scoreColor(avg)}; font-family:var(--mono, monospace)">${avg}</div>
+          <div style="font-size:13px; color:#777">/ 100</div>
+        </div>
+      ` : `<div class="hint" style="margin-top:8px">採点中…（次回の取込で反映）</div>`}
       <hr/>
       ${(a.answers || []).map((x, i) => `
-        <div style="margin:10px 0">
-          <div class="q-num">Q${i + 3}</div>
+        <div style="margin:12px 0">
+          <div style="display:flex; align-items:baseline; gap:8px">
+            <div class="q-num">Q${i + 3}</div>
+            ${typeof x.score === 'number' ? `
+              <span style="padding:2px 10px; border-radius:10px; background:#fff; border:1px solid ${scoreColor(x.score)}; color:${scoreColor(x.score)}; font-weight:600; font-size:12px; font-family:var(--mono, monospace)">${x.score}</span>
+            ` : ''}
+          </div>
           <div class="q-text">${escapeHtml(x.questionText || '')}</div>
           ${x.aim ? `<div class="q-aim"><b>狙い</b>${escapeHtml(x.aim)}</div>` : ''}
           <div style="background:#f5f0e8; padding:8px; margin-top:4px; white-space:pre-wrap; border-radius:6px">${escapeHtml(x.answerText || '')}</div>
+          ${x.scoreComment ? `<div style="margin-top:4px; padding:6px 8px; font-size:12px; color:#555; background:#fafafa; border-left:3px solid ${scoreColor(x.score)}; border-radius:0 6px 6px 0"><b>点評：</b>${escapeHtml(x.scoreComment)}</div>` : ''}
         </div>
       `).join('')}
       ${a.supplementary ? `

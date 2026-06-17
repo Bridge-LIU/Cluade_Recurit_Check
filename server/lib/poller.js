@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import { readQuestions, writeQuestions, writeAnswers } from './questions-store.js';
 import { fetchResult, closeSurvey } from './survey-client.js';
 import { loadSurveyConfig } from './settings.js';
+import { scoreAnswers } from './scoring.js';
 
 const FETCH_TIMEOUT_MS = 10000;
 
@@ -33,7 +34,7 @@ export function startPoller({ questionsDir, clarusDir, intervalMs = 300000 }) {
           const result = await fetchResult(config, data.dispatch.token, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
           if (result.status === 'submitted') {
             const resp = result.response;
-            await writeAnswers(questionsDir, id, {
+            const answersData = {
               candidateId: data.candidateId,
               token: data.dispatch.token,
               fetchedAt: new Date().toISOString(),
@@ -54,7 +55,16 @@ export function startPoller({ questionsDir, clarusDir, intervalMs = 300000 }) {
                 })
               ),
               supplementary: resp.supplementary,
-            });
+            };
+            await writeAnswers(questionsDir, id, answersData);
+
+            try {
+              const scored = await scoreAnswers(answersData);
+              await writeAnswers(questionsDir, id, scored);
+            } catch (e) {
+              console.warn(`[poller scoring] ${id}:`, e.message);
+            }
+
             await writeQuestions(questionsDir, id, {
               ...data,
               status: 'submitted',
