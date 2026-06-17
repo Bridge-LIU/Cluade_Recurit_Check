@@ -223,6 +223,81 @@
             <div class="row"><div class="label">引擎</div><div>本地 Claude Code（<code>claude -p</code>）</div></div>
             <div class="row"><div class="label">面接転写</div><div>Teams 自带文字起こしを利用（本ツールでは転写しない）</div></div>
           </div>
+
+          <div class="card" style="margin-top:16px">
+            <h2>Vercel アンケート連携</h2>
+            <div class="row">
+              <div class="label">状態</div>
+              <div>
+                <span id="surveyStatus" class="hint">未確認</span>
+                <button class="btn-ghost btn-small" id="surveyTest" style="margin-left:8px">接続テスト</button>
+              </div>
+            </div>
+            <div class="row">
+              <div class="label">API エンドポイント</div>
+              <div><input id="surveyEndpoint" class="set-input" placeholder="https://your-app.vercel.app" style="width:100%" /></div>
+            </div>
+            <div class="row">
+              <div class="label">API Key</div>
+              <div>
+                <input id="surveyApiKey" class="set-input" type="password" placeholder="（変更しない場合は空欄）" style="width:100%" />
+                <span id="surveyApiKeyMasked" class="hint" style="margin-top:4px; display:block"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:16px">
+            <h2>送信元情報</h2>
+            <div class="row">
+              <div class="label">会社名</div>
+              <div><input id="companyName" class="set-input" style="width:100%" /></div>
+            </div>
+            <div class="row">
+              <div class="label">HR 担当者名</div>
+              <div><input id="hrName" class="set-input" style="width:100%" /></div>
+            </div>
+            <div class="row">
+              <div class="label">HR メアド</div>
+              <div><input id="hrEmail" class="set-input" type="email" style="width:100%" /></div>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:16px">
+            <h2>メール文面テンプレ</h2>
+            <div class="row">
+              <div class="label">件名</div>
+              <div><input id="emailSubject" class="set-input" style="width:100%" /></div>
+            </div>
+            <div class="row">
+              <div class="label">本文</div>
+              <div><textarea id="emailBody" class="set-input" rows="14" style="width:100%; font-family:var(--mono, monospace); font-size:13px"></textarea></div>
+            </div>
+            <div class="hint" style="margin-top:6px">プレースホルダ：<code>{候補者名}</code> <code>{ポジション}</code> <code>{会社名}</code> <code>{HR 名}</code> <code>{Survey URL}</code> <code>{締切日}</code></div>
+            <div class="actions" style="margin-top:10px">
+              <button class="btn-ghost btn-small" id="emailReset">初期テンプレに戻す</button>
+            </div>
+          </div>
+
+          <div class="card" style="margin-top:16px">
+            <h2>アンケートページ説明文</h2>
+            <div class="row">
+              <div class="label">タイトル</div>
+              <div><input id="surveyTitle" class="set-input" style="width:100%" /></div>
+            </div>
+            <div class="row">
+              <div class="label">説明文</div>
+              <div><textarea id="surveyDesc" class="set-input" rows="10" style="width:100%; font-family:var(--mono, monospace); font-size:13px"></textarea></div>
+            </div>
+            <div class="hint" style="margin-top:6px">プレースホルダ：<code>{候補者名}</code> <code>{ポジション}</code> <code>{会社名}</code> <code>{締切日}</code></div>
+            <div class="actions" style="margin-top:10px">
+              <button class="btn-ghost btn-small" id="surveyDescReset">初期テンプレに戻す</button>
+            </div>
+          </div>
+
+          <div class="actions" style="margin-top:16px; gap:8px">
+            <button class="btn-primary" id="settingsSave">設定を保存</button>
+            <span id="settingsMsg" class="hint"></span>
+          </div>
         </div>
 
       </section>

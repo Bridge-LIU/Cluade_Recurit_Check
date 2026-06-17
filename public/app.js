@@ -24,6 +24,7 @@ $$('.navitem').forEach(el => {
     if (key === 'hist') loadHistory();
     if (key === 'new') refreshReqStrip();
     if (key === 'q')   loadQTab();
+    if (key === 'set') loadSetTab();
   });
 });
 
@@ -1230,5 +1231,109 @@ function renderDispatchResult(r) {
     </div>
   `;
 }
+
+// ---------------- 設定タブ ----------------
+
+const DEFAULT_EMAIL_SUBJECT = '【{会社名}】面接前アンケートご記入のお願い（{候補者名} 様）';
+const DEFAULT_EMAIL_BODY = `{候補者名} 様
+
+この度は弊社 {ポジション} ポジションにご応募いただき、誠にありがとうございます。
+
+面接前に、{締切日} までに下記アンケートへのご記入をお願いいたします。
+（所要時間：10〜15 分程度）
+
+▼アンケート URL
+{Survey URL}
+
+なお、当アンケートは 1 回のみご回答いただけます。
+回答後は自動的に受付終了となります。
+ご不明な点がございましたら、本メールにご返信ください。
+
+何卒よろしくお願いいたします。
+{HR 名}`;
+
+const DEFAULT_SURVEY_TITLE = '面接前事前アンケート';
+const DEFAULT_SURVEY_DESC = `{ポジション} のご応募ありがとうございます。
+面接をより有意義なお時間とするため、事前にいくつかご質問させていただきます。
+所要時間は 10〜15 分程度です。{締切日} までにご回答ください。
+
+【個人情報の取り扱いについて】
+ご回答内容は採用選考の目的のみに使用し、不採用の場合は 6 ヶ月以内に破棄いたします。`;
+
+async function loadSetTab() {
+  try {
+    const s = await fetch('/api/settings').then(r => r.json());
+    $('#surveyEndpoint').value = s.surveyEndpoint || '';
+    $('#surveyApiKey').value = '';
+    $('#surveyApiKeyMasked').textContent = s.surveyApiKeyMasked ? `現在: ${s.surveyApiKeyMasked}` : '未設定';
+    $('#surveyStatus').textContent = s.surveyEndpoint ? `設定済（${s.surveyEndpoint}）` : '未設定';
+    $('#companyName').value = s.companyName || '';
+    $('#hrName').value = s.hrName || '';
+    $('#hrEmail').value = s.hrEmail || '';
+    $('#emailSubject').value = s.emailTemplate?.subject ?? DEFAULT_EMAIL_SUBJECT;
+    $('#emailBody').value = s.emailTemplate?.body ?? DEFAULT_EMAIL_BODY;
+    $('#surveyTitle').value = s.surveyPageTemplate?.title ?? DEFAULT_SURVEY_TITLE;
+    $('#surveyDesc').value = s.surveyPageTemplate?.description ?? DEFAULT_SURVEY_DESC;
+    $('#settingsMsg').textContent = '';
+  } catch (e) {
+    $('#settingsMsg').textContent = '読込失敗：' + e.message;
+  }
+}
+
+$('#emailReset')?.addEventListener('click', () => {
+  $('#emailSubject').value = DEFAULT_EMAIL_SUBJECT;
+  $('#emailBody').value = DEFAULT_EMAIL_BODY;
+});
+
+$('#surveyDescReset')?.addEventListener('click', () => {
+  $('#surveyTitle').value = DEFAULT_SURVEY_TITLE;
+  $('#surveyDesc').value = DEFAULT_SURVEY_DESC;
+});
+
+$('#surveyTest')?.addEventListener('click', async () => {
+  $('#surveyStatus').textContent = '確認中…';
+  try {
+    const r = await fetch('/api/settings/survey-test').then(rr => rr.json());
+    if (r.reachable) {
+      $('#surveyStatus').textContent = `✓ 接続 OK (HTTP ${r.status})`;
+      toast('接続 OK');
+    } else {
+      $('#surveyStatus').textContent = `✗ 接続失敗：${r.error || `HTTP ${r.status}`}`;
+      toast('接続失敗');
+    }
+  } catch (e) {
+    $('#surveyStatus').textContent = `✗ ${e.message}`;
+  }
+});
+
+$('#settingsSave')?.addEventListener('click', async () => {
+  $('#settingsMsg').innerHTML = '<span class="spinner"></span> 保存中…';
+  const body = {
+    companyName: $('#companyName').value,
+    hrName: $('#hrName').value,
+    hrEmail: $('#hrEmail').value,
+    emailTemplate: { subject: $('#emailSubject').value, body: $('#emailBody').value },
+    surveyPageTemplate: { title: $('#surveyTitle').value, description: $('#surveyDesc').value },
+    surveyEndpoint: $('#surveyEndpoint').value,
+    surveyApiKey: $('#surveyApiKey').value || undefined,
+  };
+  try {
+    const r = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then(rr => rr.json());
+    if (r.ok) {
+      $('#settingsMsg').textContent = '保存しました';
+      toast('設定を保存しました');
+      // refresh masked key display
+      setTimeout(() => loadSetTab(), 100);
+    } else {
+      $('#settingsMsg').textContent = '保存失敗：' + (r.error || '不明');
+    }
+  } catch (e) {
+    $('#settingsMsg').textContent = '保存失敗：' + e.message;
+  }
+});
 
 boot();
