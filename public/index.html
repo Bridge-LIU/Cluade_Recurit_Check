@@ -186,7 +186,18 @@
             <div id="qMsg" class="hint" style="margin-top:10px"></div>
           </div>
 
+          <div id="qModeBar" class="actions" style="margin-top:10px; display:none">
+            <span id="qStatusBadge" class="badge"></span>
+            <span id="qStatusHint" class="hint" style="margin-left:8px"></span>
+            <span style="flex:1"></span>
+            <button class="btn-primary" id="qDispatchBtn" style="display:none">アンケートを公開</button>
+            <button class="btn-ghost" id="qFetchBtn" style="display:none">今すぐ取得</button>
+            <button class="btn-ghost" id="qCloseBtn" style="display:none">手動終了</button>
+          </div>
+
           <div id="qResult"></div>
+          <div id="qAnswersPanel" style="display:none"></div>
+          <div id="qDispatchModal" class="modal" style="display:none"></div>
         </div>
 
         <!-- ④ 評価履歴 -->

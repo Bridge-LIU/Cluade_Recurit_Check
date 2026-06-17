@@ -764,11 +764,17 @@ async function loadQTab() {
     $('#qMsg').textContent = '';
     if (!id) return;
     // 既存の質問があれば表示
+    $('#qModeBar').style.display = 'none';
+    $('#qAnswersPanel').style.display = 'none';
+    $('#qAnswersPanel').innerHTML = '';
     try {
       const j = await fetch(`/api/questions/${encodeURIComponent(id)}`).then(r => r.json());
       if (!j.error && j.groups) {
         renderQuestions(j);
-        $('#qMsg').innerHTML = `保存済みの質問を表示中（生成日時：${escapeHtml((j.generatedAt||'').replace('T',' ').slice(0,16))}）。再生成も可能。`;
+        updateQModeBar(j);
+        if (j.answers) renderAnswersPanel(j.answers);
+        const editedHint = (j.editedAt || j.generatedAt || '').replace('T', ' ').slice(0, 16);
+        $('#qMsg').innerHTML = `保存済みの質問を表示中（編集日時：${escapeHtml(editedHint)}）。`;
         $('#qGenerate').textContent = '再生成する';
       } else {
         $('#qGenerate').textContent = '質問を生成';
@@ -795,7 +801,10 @@ async function generateQuestions() {
       body: JSON.stringify({ candidateId: id }),
     }).then(r => r.json());
     if (j.error) throw new Error(j.error);
-    renderQuestions(j);
+    // Re-fetch to get the canonical document with status / dispatch filled in
+    const canon = await fetch(`/api/questions/${encodeURIComponent(id)}`).then(r => r.json()).catch(() => j);
+    renderQuestions(canon);
+    updateQModeBar(canon);
     $('#qMsg').innerHTML = `生成完了。<code>questions/${escapeHtml(id)}.json</code> に保存しました。`;
     btn.textContent = '再生成する';
     toast('質問を生成しました');
@@ -1000,6 +1009,50 @@ function fallbackCopy(text) {
   document.body.appendChild(ta); ta.select();
   try { document.execCommand('copy'); } catch {}
   document.body.removeChild(ta);
+}
+
+function updateQModeBar(j) {
+  const bar = $('#qModeBar');
+  if (!bar) return;
+  bar.style.display = 'flex';
+  const badge = $('#qStatusBadge');
+  const hint = $('#qStatusHint');
+  const status = j.status || 'draft';
+  badge.className = `badge ${status}`;
+  const labels = {
+    draft: '編集中',
+    sent: '公開中',
+    submitted: '提出済',
+    expired: '期限切れ',
+    closed: '手動終了',
+  };
+  badge.textContent = labels[status] || status;
+  hint.textContent =
+    status === 'sent' && j.dispatch?.expiresAt
+      ? `残り ${remainingDays(j.dispatch.expiresAt)} 日`
+      : '';
+  $('#qDispatchBtn').style.display = status === 'draft' ? '' : 'none';
+  $('#qFetchBtn').style.display = status === 'sent' ? '' : 'none';
+  $('#qCloseBtn').style.display = status === 'sent' ? '' : 'none';
+}
+
+function remainingDays(iso) {
+  if (!iso) return '?';
+  const d = Math.ceil((new Date(iso) - new Date()) / 86400000);
+  return Math.max(0, d);
+}
+
+function renderAnswersPanel(a) {
+  // Stub — Task 17 fills the content. For now, just acknowledge the answers exist.
+  const host = $('#qAnswersPanel');
+  if (!host || !a) return;
+  host.style.display = 'block';
+  host.innerHTML = `
+    <div class="card" style="margin-top:16px">
+      <div class="hint">取込済の回答（詳細は次バージョンで表示）</div>
+      <div>提出日時：${escapeHtml((a.respondent?.submittedAt || '').replace('T', ' ').slice(0, 16))}</div>
+    </div>
+  `;
 }
 
 boot();
